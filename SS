@@ -1,7 +1,7 @@
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
-# Importar funciones de Windows API para ocultar ventana de capturas
+# Importar funciones de Windows API
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
@@ -12,13 +12,13 @@ public class NativeMethods {
     [DllImport("user32.dll")]
     public static extern short GetAsyncKeyState(int vKey);
     
-    [DllImport("user32.dll")]
+    [DllImport("user32.dll", SetLastError = true)]
     public static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
     
-    [DllImport("user32.dll")]
+    [DllImport("user32.dll", SetLastError = true)]
     public static extern int GetWindowLong(IntPtr hWnd, int nIndex);
     
-    [DllImport("dwmapi.dll")]
+    [DllImport("dwmapi.dll", PreserveSig = true)]
     public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
     
     public const int MOUSEEVENTF_LEFTDOWN = 0x02;
@@ -29,7 +29,6 @@ public class NativeMethods {
     public const int GWL_EXSTYLE = -20;
     public const int WS_EX_TOOLWINDOW = 0x00000080;
     public const int DWMWA_EXCLUDED_FROM_PEEK = 12;
-    public const int DWMWA_CLOAK = 13;
 }
 "@
 
@@ -367,46 +366,60 @@ $closeBtn.Add_MouseLeave({
 $stealthBtn.Add_Click({
     $script:stealthMode = -not $script:stealthMode
     
-    try {
-        $hwnd = $form.Handle
+    if ($script:stealthMode) {
+        # Activar Stealth Mode
+        $stealthBtn.Text = "🔒 Stealth Mode: ON"
+        $stealthBtn.BackColor = [System.Drawing.Color]::FromArgb(20, 60, 20)
+        $stealthBtn.ForeColor = [System.Drawing.Color]::FromArgb(100, 255, 100)
         
-        if ($script:stealthMode) {
-            # Activar Stealth Mode
-            $stealthBtn.Text = "🔒 Stealth Mode: ON"
-            $stealthBtn.BackColor = [System.Drawing.Color]::FromArgb(20, 60, 20)
-            $stealthBtn.ForeColor = [System.Drawing.Color]::FromArgb(100, 255, 100)
+        try {
+            $hwnd = $form.Handle
             
             # Ocultar de Alt+Tab
             $currentStyle = [NativeMethods]::GetWindowLong($hwnd, [NativeMethods]::GWL_EXSTYLE)
-            [NativeMethods]::SetWindowLong($hwnd, [NativeMethods]::GWL_EXSTYLE, $currentStyle -bor [NativeMethods]::WS_EX_TOOLWINDOW) | Out-Null
+            $newStyle = $currentStyle -bor [NativeMethods]::WS_EX_TOOLWINDOW
+            [NativeMethods]::SetWindowLong($hwnd, [NativeMethods]::GWL_EXSTYLE, $newStyle) | Out-Null
             
-            # Excluir de capturas
-            $value = 1
-            [NativeMethods]::DwmSetWindowAttribute($hwnd, [NativeMethods]::DWMWA_EXCLUDED_FROM_PEEK, [ref]$value, 4) | Out-Null
+            # Intentar excluir de capturas (puede fallar en algunos sistemas)
+            try {
+                $value = 1
+                [NativeMethods]::DwmSetWindowAttribute($hwnd, [NativeMethods]::DWMWA_EXCLUDED_FROM_PEEK, [ref]$value, 4) | Out-Null
+            } catch {}
             
             # Ocultar de taskbar
             $form.ShowInTaskbar = $false
-            $form.Refresh()
-        } else {
-            # Desactivar Stealth Mode
-            $stealthBtn.Text = "👁️ Stealth Mode: OFF"
-            $stealthBtn.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 20)
-            $stealthBtn.ForeColor = [System.Drawing.Color]::FromArgb(255, 255, 100)
+            $form.Hide()
+            $form.Show()
+        } catch {
+            [System.Windows.Forms.MessageBox]::Show("No se pudo activar Stealth Mode", "Aviso", "OK", "Warning")
+        }
+    } else {
+        # Desactivar Stealth Mode
+        $stealthBtn.Text = "👁️ Stealth Mode: OFF"
+        $stealthBtn.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 20)
+        $stealthBtn.ForeColor = [System.Drawing.Color]::FromArgb(255, 255, 100)
+        
+        try {
+            $hwnd = $form.Handle
             
             # Mostrar en Alt+Tab
             $currentStyle = [NativeMethods]::GetWindowLong($hwnd, [NativeMethods]::GWL_EXSTYLE)
-            [NativeMethods]::SetWindowLong($hwnd, [NativeMethods]::GWL_EXSTYLE, $currentStyle -band (-bnot [NativeMethods]::WS_EX_TOOLWINDOW)) | Out-Null
+            $newStyle = $currentStyle -band (-bnot [NativeMethods]::WS_EX_TOOLWINDOW)
+            [NativeMethods]::SetWindowLong($hwnd, [NativeMethods]::GWL_EXSTYLE, $newStyle) | Out-Null
             
             # Incluir en capturas
-            $value = 0
-            [NativeMethods]::DwmSetWindowAttribute($hwnd, [NativeMethods]::DWMWA_EXCLUDED_FROM_PEEK, [ref]$value, 4) | Out-Null
+            try {
+                $value = 0
+                [NativeMethods]::DwmSetWindowAttribute($hwnd, [NativeMethods]::DWMWA_EXCLUDED_FROM_PEEK, [ref]$value, 4) | Out-Null
+            } catch {}
             
             # Mostrar en taskbar
             $form.ShowInTaskbar = $true
-            $form.Refresh()
+            $form.Hide()
+            $form.Show()
+        } catch {
+            [System.Windows.Forms.MessageBox]::Show("No se pudo desactivar Stealth Mode", "Aviso", "OK", "Warning")
         }
-    } catch {
-        [System.Windows.Forms.MessageBox]::Show("Error toggling stealth mode", "Error", "OK", "Error")
     }
 })
 
@@ -459,28 +472,27 @@ $script:keyMonitorTimer.Start()
 $form.Add_Shown({
     $form.Activate()
     
-    # Dar tiempo a que se muestre la ventana primero
-    Start-Sleep -Milliseconds 100
-    
-    # Activar stealth mode por defecto
+    # Solo activar stealth si está habilitado
     if ($script:stealthMode) {
+        Start-Sleep -Milliseconds 200
+        
         try {
             $hwnd = $form.Handle
             
-            # Ocultar de la barra de tareas y Alt+Tab
+            # Ocultar de Alt+Tab
             $currentStyle = [NativeMethods]::GetWindowLong($hwnd, [NativeMethods]::GWL_EXSTYLE)
-            [NativeMethods]::SetWindowLong($hwnd, [NativeMethods]::GWL_EXSTYLE, $currentStyle -bor [NativeMethods]::WS_EX_TOOLWINDOW) | Out-Null
+            $newStyle = $currentStyle -bor [NativeMethods]::WS_EX_TOOLWINDOW
+            [NativeMethods]::SetWindowLong($hwnd, [NativeMethods]::GWL_EXSTYLE, $newStyle) | Out-Null
             
-            # Excluir de capturas de pantalla (Windows 10/11)
-            $value = 1
-            [NativeMethods]::DwmSetWindowAttribute($hwnd, [NativeMethods]::DWMWA_EXCLUDED_FROM_PEEK, [ref]$value, 4) | Out-Null
+            # Intentar excluir de capturas (silenciar errores)
+            try {
+                $value = 1
+                [NativeMethods]::DwmSetWindowAttribute($hwnd, [NativeMethods]::DWMWA_EXCLUDED_FROM_PEEK, [ref]$value, 4) | Out-Null
+            } catch {}
             
-            # Ocultar de taskbar después de mostrar
+            # Ocultar de taskbar
             $form.ShowInTaskbar = $false
-            $form.Refresh()
-        } catch {
-            # Si falla, continúa normalmente
-        }
+        } catch {}
     }
 })
 
