@@ -37,11 +37,11 @@ function Get-KeyName {
     param([int]$keyCode)
     
     $keyNames = @{
-        0x01 = "L-Click"
-        0x02 = "R-Click"
-        0x04 = "M-Click"
-        0x05 = "Mouse4"
-        0x06 = "Mouse5"
+        0x01 = "LMB"
+        0x02 = "RMB"
+        0x04 = "MMB"
+        0x05 = "MB4"
+        0x06 = "MB5"
         0x20 = "Space"
         0x10 = "Shift"
         0x11 = "Ctrl"
@@ -117,7 +117,7 @@ function Update-KeyStates {
     # Modo escucha para tecla izquierda
     if ($script:leftListeningMode) {
         $pressedKey = Get-PressedKey
-        if ($pressedKey -ne 0 -and $pressedKey -ne 0x01) {
+        if ($pressedKey -ne 0) {
             $script:leftHotkey = $pressedKey
             $keyName = Get-KeyName $pressedKey
             $leftKeyLabel.Text = $keyName
@@ -131,7 +131,7 @@ function Update-KeyStates {
     # Modo escucha para tecla derecha
     if ($script:rightListeningMode) {
         $pressedKey = Get-PressedKey
-        if ($pressedKey -ne 0 -and $pressedKey -ne 0x02) {
+        if ($pressedKey -ne 0) {
             $script:rightHotkey = $pressedKey
             $keyName = Get-KeyName $pressedKey
             $rightKeyLabel.Text = $keyName
@@ -146,11 +146,11 @@ function Update-KeyStates {
 # Crear formulario
 $form = New-Object System.Windows.Forms.Form
 $form.Text = ""
-$form.Size = New-Object System.Drawing.Size(325, 245)
+$form.Size = New-Object System.Drawing.Size(340, 250)
 $form.StartPosition = "CenterScreen"
 $form.FormBorderStyle = "None"
-$form.BackColor = [System.Drawing.Color]::FromArgb(18, 18, 18)
-$form.Font = New-Object System.Drawing.Font("Arial", 9)
+$form.BackColor = [System.Drawing.Color]::FromArgb(20, 20, 20)
+$form.Font = New-Object System.Drawing.Font("Segoe UI", 9)
 
 # Hacer el formulario arrastrable
 $script:dragging = $false
@@ -158,7 +158,7 @@ $script:dragCursor = [System.Drawing.Point]::Empty
 $script:dragForm = [System.Drawing.Point]::Empty
 
 $form.Add_MouseDown({
-    if ($_.Button -eq [System.Windows.Forms.MouseButtons]::Left -and $_.Y -lt 50) {
+    if ($_.Button -eq [System.Windows.Forms.MouseButtons]::Left -and $_.Y -lt 45) {
         $script:dragging = $true
         $script:dragCursor = [System.Windows.Forms.Cursor]::Position
         $script:dragForm = $form.Location
@@ -184,145 +184,161 @@ $form.Add_MouseUp({
     }
 })
 
+# Header Panel
+$headerPanel = New-Object System.Windows.Forms.Panel
+$headerPanel.Location = New-Object System.Drawing.Point(0, 0)
+$headerPanel.Size = New-Object System.Drawing.Size(340, 45)
+$headerPanel.BackColor = [System.Drawing.Color]::FromArgb(20, 20, 20)
+$form.Controls.Add($headerPanel)
+
 # Título
 $titleLabel = New-Object System.Windows.Forms.Label
-$titleLabel.Location = New-Object System.Drawing.Point(20, 12)
-$titleLabel.Size = New-Object System.Drawing.Size(250, 28)
+$titleLabel.Location = New-Object System.Drawing.Point(15, 10)
+$titleLabel.Size = New-Object System.Drawing.Size(250, 25)
 $titleLabel.Text = "Icon1cClicker"
-$titleLabel.Font = New-Object System.Drawing.Font("Arial", 14, [System.Drawing.FontStyle]::Bold)
+$titleLabel.Font = New-Object System.Drawing.Font("Segoe UI", 13, [System.Drawing.FontStyle]::Bold)
 $titleLabel.ForeColor = [System.Drawing.Color]::White
-$titleLabel.TextAlign = "MiddleLeft"
-$form.Controls.Add($titleLabel)
+$headerPanel.Controls.Add($titleLabel)
 
 # Botón cerrar
 $closeBtn = New-Object System.Windows.Forms.Label
-$closeBtn.Location = New-Object System.Drawing.Point(290, 8)
-$closeBtn.Size = New-Object System.Drawing.Size(30, 30)
+$closeBtn.Location = New-Object System.Drawing.Point(305, 8)
+$closeBtn.Size = New-Object System.Drawing.Size(25, 25)
 $closeBtn.Text = "×"
-$closeBtn.ForeColor = [System.Drawing.Color]::White
-$closeBtn.Font = New-Object System.Drawing.Font("Arial", 20, [System.Drawing.FontStyle]::Regular)
+$closeBtn.ForeColor = [System.Drawing.Color]::FromArgb(180, 180, 180)
+$closeBtn.Font = New-Object System.Drawing.Font("Segoe UI", 16)
 $closeBtn.TextAlign = "MiddleCenter"
 $closeBtn.Cursor = [System.Windows.Forms.Cursors]::Hand
-$form.Controls.Add($closeBtn)
+$headerPanel.Controls.Add($closeBtn)
 
-# Left Click Row
-$leftClickLabel = New-Object System.Windows.Forms.Label
-$leftClickLabel.Location = New-Object System.Drawing.Point(20, 55)
-$leftClickLabel.Size = New-Object System.Drawing.Size(70, 25)
-$leftClickLabel.Text = "Left click"
-$leftClickLabel.ForeColor = [System.Drawing.Color]::FromArgb(140, 140, 140)
-$leftClickLabel.Font = New-Object System.Drawing.Font("Arial", 9)
-$form.Controls.Add($leftClickLabel)
+# Left Click Section
+$leftPanel = New-Object System.Windows.Forms.Panel
+$leftPanel.Location = New-Object System.Drawing.Point(15, 60)
+$leftPanel.Size = New-Object System.Drawing.Size(310, 60)
+$leftPanel.BackColor = [System.Drawing.Color]::FromArgb(25, 25, 25)
+$form.Controls.Add($leftPanel)
+
+$leftLabel = New-Object System.Windows.Forms.Label
+$leftLabel.Location = New-Object System.Drawing.Point(10, 8)
+$leftLabel.Size = New-Object System.Drawing.Size(70, 20)
+$leftLabel.Text = "Left click"
+$leftLabel.ForeColor = [System.Drawing.Color]::FromArgb(150, 150, 150)
+$leftLabel.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+$leftPanel.Controls.Add($leftLabel)
 
 $leftKeyLabel = New-Object System.Windows.Forms.Label
-$leftKeyLabel.Location = New-Object System.Drawing.Point(110, 53)
-$leftKeyLabel.Size = New-Object System.Drawing.Size(90, 28)
+$leftKeyLabel.Location = New-Object System.Drawing.Point(90, 5)
+$leftKeyLabel.Size = New-Object System.Drawing.Size(70, 26)
 $leftKeyLabel.Text = "none"
-$leftKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(100, 100, 100)
-$leftKeyLabel.Font = New-Object System.Drawing.Font("Arial", 10)
+$leftKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(120, 120, 120)
+$leftKeyLabel.Font = New-Object System.Drawing.Font("Segoe UI", 10)
 $leftKeyLabel.Cursor = [System.Windows.Forms.Cursors]::Hand
 $leftKeyLabel.BorderStyle = "FixedSingle"
-$leftKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(25, 25, 25)
+$leftKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(30, 30, 30)
 $leftKeyLabel.TextAlign = "MiddleCenter"
-$form.Controls.Add($leftKeyLabel)
+$leftPanel.Controls.Add($leftKeyLabel)
 
-$leftCpsLabel = New-Object System.Windows.Forms.Label
-$leftCpsLabel.Location = New-Object System.Drawing.Point(270, 55)
-$leftCpsLabel.Size = New-Object System.Drawing.Size(35, 25)
-$leftCpsLabel.Text = "10"
-$leftCpsLabel.ForeColor = [System.Drawing.Color]::White
-$leftCpsLabel.Font = New-Object System.Drawing.Font("Arial", 11, [System.Drawing.FontStyle]::Bold)
-$leftCpsLabel.TextAlign = "MiddleRight"
-$form.Controls.Add($leftCpsLabel)
+$leftCpsValueLabel = New-Object System.Windows.Forms.Label
+$leftCpsValueLabel.Location = New-Object System.Drawing.Point(260, 8)
+$leftCpsValueLabel.Size = New-Object System.Drawing.Size(40, 20)
+$leftCpsValueLabel.Text = "10"
+$leftCpsValueLabel.ForeColor = [System.Drawing.Color]::White
+$leftCpsValueLabel.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+$leftCpsValueLabel.TextAlign = "MiddleRight"
+$leftPanel.Controls.Add($leftCpsValueLabel)
 
-# Left CPS Slider
-$leftCpsSlider = New-Object System.Windows.Forms.TrackBar
-$leftCpsSlider.Location = New-Object System.Drawing.Point(20, 85)
-$leftCpsSlider.Size = New-Object System.Drawing.Size(285, 35)
-$leftCpsSlider.Minimum = 1
-$leftCpsSlider.Maximum = 25
-$leftCpsSlider.Value = 10
-$leftCpsSlider.TickStyle = "None"
-$leftCpsSlider.BackColor = [System.Drawing.Color]::FromArgb(18, 18, 18)
-$form.Controls.Add($leftCpsSlider)
+$leftSlider = New-Object System.Windows.Forms.TrackBar
+$leftSlider.Location = New-Object System.Drawing.Point(10, 32)
+$leftSlider.Size = New-Object System.Drawing.Size(290, 25)
+$leftSlider.Minimum = 1
+$leftSlider.Maximum = 25
+$leftSlider.Value = 10
+$leftSlider.TickStyle = "None"
+$leftSlider.BackColor = [System.Drawing.Color]::FromArgb(25, 25, 25)
+$leftPanel.Controls.Add($leftSlider)
 
-# Right Click Row
-$rightClickLabel = New-Object System.Windows.Forms.Label
-$rightClickLabel.Location = New-Object System.Drawing.Point(20, 125)
-$rightClickLabel.Size = New-Object System.Drawing.Size(70, 25)
-$rightClickLabel.Text = "Right click"
-$rightClickLabel.ForeColor = [System.Drawing.Color]::FromArgb(140, 140, 140)
-$rightClickLabel.Font = New-Object System.Drawing.Font("Arial", 9)
-$form.Controls.Add($rightClickLabel)
+# Right Click Section
+$rightPanel = New-Object System.Windows.Forms.Panel
+$rightPanel.Location = New-Object System.Drawing.Point(15, 130)
+$rightPanel.Size = New-Object System.Drawing.Size(310, 60)
+$rightPanel.BackColor = [System.Drawing.Color]::FromArgb(25, 25, 25)
+$form.Controls.Add($rightPanel)
+
+$rightLabel = New-Object System.Windows.Forms.Label
+$rightLabel.Location = New-Object System.Drawing.Point(10, 8)
+$rightLabel.Size = New-Object System.Drawing.Size(70, 20)
+$rightLabel.Text = "Right click"
+$rightLabel.ForeColor = [System.Drawing.Color]::FromArgb(150, 150, 150)
+$rightLabel.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+$rightPanel.Controls.Add($rightLabel)
 
 $rightKeyLabel = New-Object System.Windows.Forms.Label
-$rightKeyLabel.Location = New-Object System.Drawing.Point(110, 123)
-$rightKeyLabel.Size = New-Object System.Drawing.Size(90, 28)
+$rightKeyLabel.Location = New-Object System.Drawing.Point(90, 5)
+$rightKeyLabel.Size = New-Object System.Drawing.Size(70, 26)
 $rightKeyLabel.Text = "none"
-$rightKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(100, 100, 100)
-$rightKeyLabel.Font = New-Object System.Drawing.Font("Arial", 10)
+$rightKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(120, 120, 120)
+$rightKeyLabel.Font = New-Object System.Drawing.Font("Segoe UI", 10)
 $rightKeyLabel.Cursor = [System.Windows.Forms.Cursors]::Hand
 $rightKeyLabel.BorderStyle = "FixedSingle"
-$rightKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(25, 25, 25)
+$rightKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(30, 30, 30)
 $rightKeyLabel.TextAlign = "MiddleCenter"
-$form.Controls.Add($rightKeyLabel)
+$rightPanel.Controls.Add($rightKeyLabel)
 
-$rightCpsLabel = New-Object System.Windows.Forms.Label
-$rightCpsLabel.Location = New-Object System.Drawing.Point(270, 125)
-$rightCpsLabel.Size = New-Object System.Drawing.Size(35, 25)
-$rightCpsLabel.Text = "10"
-$rightCpsLabel.ForeColor = [System.Drawing.Color]::White
-$rightCpsLabel.Font = New-Object System.Drawing.Font("Arial", 11, [System.Drawing.FontStyle]::Bold)
-$rightCpsLabel.TextAlign = "MiddleRight"
-$form.Controls.Add($rightCpsLabel)
+$rightCpsValueLabel = New-Object System.Windows.Forms.Label
+$rightCpsValueLabel.Location = New-Object System.Drawing.Point(260, 8)
+$rightCpsValueLabel.Size = New-Object System.Drawing.Size(40, 20)
+$rightCpsValueLabel.Text = "10"
+$rightCpsValueLabel.ForeColor = [System.Drawing.Color]::White
+$rightCpsValueLabel.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+$rightCpsValueLabel.TextAlign = "MiddleRight"
+$rightPanel.Controls.Add($rightCpsValueLabel)
 
-# Right CPS Slider
-$rightCpsSlider = New-Object System.Windows.Forms.TrackBar
-$rightCpsSlider.Location = New-Object System.Drawing.Point(20, 155)
-$rightCpsSlider.Size = New-Object System.Drawing.Size(285, 35)
-$rightCpsSlider.Minimum = 1
-$rightCpsSlider.Maximum = 25
-$rightCpsSlider.Value = 10
-$rightCpsSlider.TickStyle = "None"
-$rightCpsSlider.BackColor = [System.Drawing.Color]::FromArgb(18, 18, 18)
-$form.Controls.Add($rightCpsSlider)
+$rightSlider = New-Object System.Windows.Forms.TrackBar
+$rightSlider.Location = New-Object System.Drawing.Point(10, 32)
+$rightSlider.Size = New-Object System.Drawing.Size(290, 25)
+$rightSlider.Minimum = 1
+$rightSlider.Maximum = 25
+$rightSlider.Value = 10
+$rightSlider.TickStyle = "None"
+$rightSlider.BackColor = [System.Drawing.Color]::FromArgb(25, 25, 25)
+$rightPanel.Controls.Add($rightSlider)
 
 # Self Destruct Button
 $selfDestructBtn = New-Object System.Windows.Forms.Button
-$selfDestructBtn.Location = New-Object System.Drawing.Point(20, 195)
-$selfDestructBtn.Size = New-Object System.Drawing.Size(285, 32)
+$selfDestructBtn.Location = New-Object System.Drawing.Point(15, 205)
+$selfDestructBtn.Size = New-Object System.Drawing.Size(310, 32)
 $selfDestructBtn.Text = "SELF DESTRUCT"
-$selfDestructBtn.BackColor = [System.Drawing.Color]::FromArgb(139, 0, 0)
+$selfDestructBtn.BackColor = [System.Drawing.Color]::FromArgb(120, 20, 20)
 $selfDestructBtn.ForeColor = [System.Drawing.Color]::White
 $selfDestructBtn.FlatStyle = "Flat"
 $selfDestructBtn.FlatAppearance.BorderSize = 0
-$selfDestructBtn.Font = New-Object System.Drawing.Font("Arial", 9, [System.Drawing.FontStyle]::Bold)
+$selfDestructBtn.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 $selfDestructBtn.Cursor = [System.Windows.Forms.Cursors]::Hand
 $form.Controls.Add($selfDestructBtn)
 
 # Event Handlers
 $leftKeyLabel.Add_Click({
     $leftKeyLabel.Text = "..."
-    $leftKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(180, 30, 30)
+    $leftKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(220, 80, 80)
     $script:leftListeningMode = $true
 })
 
 $rightKeyLabel.Add_Click({
     $rightKeyLabel.Text = "..."
-    $rightKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(180, 30, 30)
+    $rightKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(220, 80, 80)
     $script:rightListeningMode = $true
 })
 
-$leftCpsSlider.Add_ValueChanged({
-    $leftCpsLabel.Text = $leftCpsSlider.Value.ToString()
-    $interval = [Math]::Floor(1000.0 / $leftCpsSlider.Value)
-    $script:leftClickTimer.Interval = [Math]::Max(1, $interval)
+$leftSlider.Add_ValueChanged({
+    $leftCpsValueLabel.Text = $leftSlider.Value.ToString()
+    $interval = 1000.0 / [double]$leftSlider.Value
+    $script:leftClickTimer.Interval = [Math]::Max(1, [int]$interval)
 })
 
-$rightCpsSlider.Add_ValueChanged({
-    $rightCpsLabel.Text = $rightCpsSlider.Value.ToString()
-    $interval = [Math]::Floor(1000.0 / $rightCpsSlider.Value)
-    $script:rightClickTimer.Interval = [Math]::Max(1, $interval)
+$rightSlider.Add_ValueChanged({
+    $rightCpsValueLabel.Text = $rightSlider.Value.ToString()
+    $interval = 1000.0 / [double]$rightSlider.Value
+    $script:rightClickTimer.Interval = [Math]::Max(1, [int]$interval)
 })
 
 $closeBtn.Add_Click({
@@ -330,11 +346,11 @@ $closeBtn.Add_Click({
 })
 
 $closeBtn.Add_MouseEnter({
-    $closeBtn.ForeColor = [System.Drawing.Color]::FromArgb(180, 30, 30)
+    $closeBtn.ForeColor = [System.Drawing.Color]::FromArgb(220, 80, 80)
 })
 
 $closeBtn.Add_MouseLeave({
-    $closeBtn.ForeColor = [System.Drawing.Color]::White
+    $closeBtn.ForeColor = [System.Drawing.Color]::FromArgb(180, 180, 180)
 })
 
 $selfDestructBtn.Add_Click({
@@ -347,7 +363,7 @@ $selfDestructBtn.Add_Click({
     
     if ($result -eq [System.Windows.Forms.DialogResult]::Yes) {
         $selfDestructBtn.Text = "DESTRUCTING..."
-        $selfDestructBtn.BackColor = [System.Drawing.Color]::FromArgb(220, 20, 20)
+        $selfDestructBtn.BackColor = [System.Drawing.Color]::FromArgb(180, 20, 20)
         $form.Refresh()
         Start-Sleep -Milliseconds 300
         
@@ -375,8 +391,8 @@ $selfDestructBtn.Add_Click({
 # Configurar timers
 $script:leftClickTimer.Add_Tick({ Invoke-LeftClick })
 $script:rightClickTimer.Add_Tick({ Invoke-RightClick })
-$script:leftClickTimer.Interval = 100  # 10 CPS inicial
-$script:rightClickTimer.Interval = 100  # 10 CPS inicial
+$script:leftClickTimer.Interval = 100
+$script:rightClickTimer.Interval = 100
 
 $script:keyMonitorTimer.Interval = 10
 $script:keyMonitorTimer.Add_Tick({ Update-KeyStates })
