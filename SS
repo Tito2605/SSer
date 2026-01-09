@@ -161,7 +161,7 @@ function Update-KeyStates {
 # Crear formulario
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "Icon1cClicker"
-$form.Size = New-Object System.Drawing.Size(330, 240)
+$form.Size = New-Object System.Drawing.Size(330, 250)
 $form.StartPosition = "CenterScreen"
 $form.FormBorderStyle = "None"
 $form.BackColor = [System.Drawing.Color]::FromArgb(15, 15, 15)
@@ -455,9 +455,12 @@ $script:keyMonitorTimer.Interval = 10
 $script:keyMonitorTimer.Add_Tick({ Update-KeyStates })
 $script:keyMonitorTimer.Start()
 
-# Ocultar de capturas de pantalla y grabaciones
+# Ocultar de capturas de pantalla y grabaciones (al iniciar)
 $form.Add_Shown({
     $form.Activate()
+    
+    # Dar tiempo a que se muestre la ventana primero
+    Start-Sleep -Milliseconds 100
     
     # Activar stealth mode por defecto
     if ($script:stealthMode) {
@@ -472,8 +475,9 @@ $form.Add_Shown({
             $value = 1
             [NativeMethods]::DwmSetWindowAttribute($hwnd, [NativeMethods]::DWMWA_EXCLUDED_FROM_PEEK, [ref]$value, 4) | Out-Null
             
-            # Ocultar de taskbar
+            # Ocultar de taskbar después de mostrar
             $form.ShowInTaskbar = $false
+            $form.Refresh()
         } catch {
             # Si falla, continúa normalmente
         }
