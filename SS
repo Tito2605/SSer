@@ -1,4 +1,4 @@
-# Forzar modo STA
+# Forzar STA
 if ($host.Runspace.ApartmentState -ne "STA") {
     powershell -STA -ExecutionPolicy Bypass -File $PSCommandPath
     exit
@@ -7,457 +7,275 @@ if ($host.Runspace.ApartmentState -ne "STA") {
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
-# API de Windows
-try {
-    Add-Type @"
+# API
+Add-Type @"
 using System;
 using System.Runtime.InteropServices;
-public class NativeMethods {
-    [DllImport("user32.dll")]
-    public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);
-    
-    [DllImport("user32.dll")]
-    public static extern short GetAsyncKeyState(int vKey);
-    
-    [DllImport("user32.dll", SetLastError = true)]
-    public static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
-    
-    [DllImport("user32.dll", SetLastError = true)]
-    public static extern int GetWindowLong(IntPtr hWnd, int nIndex);
-    
-    [DllImport("dwmapi.dll", PreserveSig = true)]
-    public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
-    
-    public const int MOUSEEVENTF_LEFTDOWN = 0x02;
-    public const int MOUSEEVENTF_LEFTUP = 0x04;
-    public const int MOUSEEVENTF_RIGHTDOWN = 0x08;
-    public const int MOUSEEVENTF_RIGHTUP = 0x10;
+public class API {
+    [DllImport("user32.dll")] public static extern void mouse_event(int f, int x, int y, int d, int e);
+    [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int k);
 }
 "@
-} catch {}
 
 # Variables
-$script:leftTimer = New-Object System.Windows.Forms.Timer
-$script:rightTimer = New-Object System.Windows.Forms.Timer
-$script:monitorTimer = New-Object System.Windows.Forms.Timer
-$script:leftKey = 0
-$script:rightKey = 0
-$script:leftEnabled = $false
-$script:rightEnabled = $false
-$script:leftListening = $false
-$script:rightListening = $false
-$script:stealthMode = $false
+$l = @{timer=$null; key=0; cps=10; on=$false}
+$r = @{timer=$null; key=0; cps=10; on=$false}
+$listen = @{left=$false; right=$false}
 
-function Get-KeyName {
-    param([int]$code)
-    $names = @{
-        0x01="LMB";0x02="RMB";0x04="MMB";0x05="MB4";0x06="MB5"
-        0x20="Space";0x10="Shift";0x11="Ctrl";0x12="Alt"
-        0x41="A";0x42="B";0x43="C";0x44="D";0x45="E";0x46="F";0x47="G"
-        0x48="H";0x49="I";0x4A="J";0x4B="K";0x4C="L";0x4D="M";0x4E="N"
-        0x4F="O";0x50="P";0x51="Q";0x52="R";0x53="S";0x54="T";0x55="U"
-        0x56="V";0x57="W";0x58="X";0x59="Y";0x5A="Z"
-        0x70="F1";0x71="F2";0x72="F3";0x73="F4";0x74="F5";0x75="F6"
+function KeyName($k) {
+    $n = @{1="LMB";2="RMB";4="MMB";5="MB4";6="MB5";32="Space";16="Shift";17="Ctrl";18="Alt"}
+    65..90|%{$n[$_]=[char]$_}
+    112..117|%{$n[$_]="F"+($_-111)}
+    if($n[$k]){return $n[$k]}
+    "Key"
+}
+
+function Click($type) {
+    if($type -eq "left"){
+        [API]::mouse_event(2,0,0,0,0)
+        [API]::mouse_event(4,0,0,0,0)
+    } else {
+        [API]::mouse_event(8,0,0,0,0)
+        [API]::mouse_event(16,0,0,0,0)
     }
-    if($names.ContainsKey($code)){return $names[$code]}
-    return "Key"
 }
 
-function Get-PressedKey {
-    for($i=1;$i -le 254;$i++){
-        if(([NativeMethods]::GetAsyncKeyState($i) -band 0x8000) -ne 0){return $i}
+function Monitor {
+    # Left
+    if($l.on -and $l.key -gt 0){
+        $p = ([API]::GetAsyncKeyState($l.key) -band 0x8000) -ne 0
+        if($p -and !$l.timer.Enabled){$l.timer.Start()}
+        if(!$p -and $l.timer.Enabled){$l.timer.Stop()}
     }
-    return 0
-}
-
-function Do-LeftClick {
-    [NativeMethods]::mouse_event(2,0,0,0,0)
-    [NativeMethods]::mouse_event(4,0,0,0,0)
-}
-
-function Do-RightClick {
-    [NativeMethods]::mouse_event(8,0,0,0,0)
-    [NativeMethods]::mouse_event(16,0,0,0,0)
-}
-
-function Update-Monitor {
-    # Left click monitoring
-    if($script:leftEnabled -and $script:leftKey -ne 0){
-        $state = [NativeMethods]::GetAsyncKeyState($script:leftKey)
-        $isPressed = ($state -band 0x8000) -ne 0
-        
-        if($isPressed){
-            if(-not $script:leftTimer.Enabled){
-                $script:leftTimer.Start()
-            }
-        } else {
-            if($script:leftTimer.Enabled){
-                $script:leftTimer.Stop()
+    # Right
+    if($r.on -and $r.key -gt 0){
+        $p = ([API]::GetAsyncKeyState($r.key) -band 0x8000) -ne 0
+        if($p -and !$r.timer.Enabled){$r.timer.Start()}
+        if(!$p -and $r.timer.Enabled){$r.timer.Stop()}
+    }
+    # Listen
+    if($listen.left){
+        1..254|%{
+            if(([API]::GetAsyncKeyState($_) -band 0x8000) -ne 0){
+                if($_ -eq 27){$l.key=0;$lk.Text="none";$lk.ForeColor=[Drawing.Color]::Gray;$l.on=$false}
+                else{$l.key=$_;$lk.Text=KeyName $_;$lk.ForeColor=[Drawing.Color]::White;$l.on=$true}
+                $listen.left=$false
+                Sleep -m 200
+                return
             }
         }
     }
-    
-    # Right click monitoring
-    if($script:rightEnabled -and $script:rightKey -ne 0){
-        $state = [NativeMethods]::GetAsyncKeyState($script:rightKey)
-        $isPressed = ($state -band 0x8000) -ne 0
-        
-        if($isPressed){
-            if(-not $script:rightTimer.Enabled){
-                $script:rightTimer.Start()
+    if($listen.right){
+        1..254|%{
+            if(([API]::GetAsyncKeyState($_) -band 0x8000) -ne 0){
+                if($_ -eq 27){$r.key=0;$rk.Text="none";$rk.ForeColor=[Drawing.Color]::Gray;$r.on=$false}
+                else{$r.key=$_;$rk.Text=KeyName $_;$rk.ForeColor=[Drawing.Color]::White;$r.on=$true}
+                $listen.right=$false
+                Sleep -m 200
+                return
             }
-        } else {
-            if($script:rightTimer.Enabled){
-                $script:rightTimer.Stop()
-            }
-        }
-    }
-    
-    # Listen Left
-    if($script:leftListening){
-        $key = Get-PressedKey
-        if($key -ne 0){
-            if($key -eq 0x1B){
-                $script:leftKey = 0
-                $leftKeyBox.Text = "none"
-                $leftKeyBox.ForeColor = [System.Drawing.Color]::FromArgb(100,100,100)
-                $script:leftEnabled = $false
-            } else {
-                $script:leftKey = $key
-                $leftKeyBox.Text = Get-KeyName $key
-                $leftKeyBox.ForeColor = [System.Drawing.Color]::White
-                $script:leftEnabled = $true
-            }
-            $leftKeyBox.BackColor = [System.Drawing.Color]::FromArgb(15,15,15)
-            $script:leftListening = $false
-            Start-Sleep -Milliseconds 200
-        }
-    }
-    
-    # Listen Right
-    if($script:rightListening){
-        $key = Get-PressedKey
-        if($key -ne 0){
-            if($key -eq 0x1B){
-                $script:rightKey = 0
-                $rightKeyBox.Text = "none"
-                $rightKeyBox.ForeColor = [System.Drawing.Color]::FromArgb(100,100,100)
-                $script:rightEnabled = $false
-            } else {
-                $script:rightKey = $key
-                $rightKeyBox.Text = Get-KeyName $key
-                $rightKeyBox.ForeColor = [System.Drawing.Color]::White
-                $script:rightEnabled = $true
-            }
-            $rightKeyBox.BackColor = [System.Drawing.Color]::FromArgb(15,15,15)
-            $script:rightListening = $false
-            Start-Sleep -Milliseconds 200
         }
     }
 }
 
 # Form
-$form = New-Object System.Windows.Forms.Form
-$form.Text = "Icon1CClicker"
-$form.Size = New-Object System.Drawing.Size(350,280)
-$form.StartPosition = "CenterScreen"
-$form.FormBorderStyle = "None"
-$form.BackColor = [System.Drawing.Color]::FromArgb(18,18,18)
-$form.ShowInTaskbar = $true
+$f = New-Object Windows.Forms.Form
+$f.Text = "Icon1CClicker"
+$f.Size = [Drawing.Size]::new(360,290)
+$f.StartPosition = "CenterScreen"
+$f.FormBorderStyle = "None"
+$f.BackColor = [Drawing.Color]::FromArgb(15,15,15)
+$f.ShowInTaskbar = $true
 
-# Dragging
-$script:drag = $false
-$form.Add_MouseDown({
-    if($_.Button -eq "Left" -and $_.Y -lt 45){
-        $script:drag = $true
-        $script:dragStart = $_.Location
-    }
-})
-$form.Add_MouseMove({
-    if($script:drag){
-        $pos = $form.PointToScreen($_.Location)
-        $form.Location = New-Object System.Drawing.Point($pos.X - $script:dragStart.X, $pos.Y - $script:dragStart.Y)
-    }
-})
-$form.Add_MouseUp({$script:drag = $false})
+# Drag
+$d=$false
+$f.Add_MouseDown({if($_.Y -lt 45){$script:d=$true;$script:ds=$_.Location}})
+$f.Add_MouseMove({if($d){$p=$f.PointToScreen($_.Location);$f.Location=[Drawing.Point]::new($p.X-$ds.X,$p.Y-$ds.Y)}})
+$f.Add_MouseUp({$script:d=$false})
 
 # Title
-$title = New-Object System.Windows.Forms.Label
-$title.Location = New-Object System.Drawing.Point(15,14)
-$title.Size = New-Object System.Drawing.Size(220,28)
-$title.Text = "Icon1CClicker"
-$title.Font = New-Object System.Drawing.Font("Segoe UI",15,[System.Drawing.FontStyle]::Bold)
-$title.ForeColor = [System.Drawing.Color]::White
-$form.Controls.Add($title)
+$t = New-Object Windows.Forms.Label
+$t.Bounds = [Drawing.Rectangle]::new(15,15,250,25)
+$t.Text = "Icon1CClicker"
+$t.Font = [Drawing.Font]::new("Segoe UI",14,"Bold")
+$t.ForeColor = [Drawing.Color]::White
+$f.Controls.Add($t)
 
-# Discord logo SVG-style
-$discord = New-Object System.Windows.Forms.Panel
-$discord.Location = New-Object System.Drawing.Point(270,12)
-$discord.Size = New-Object System.Drawing.Size(32,32)
-$discord.BackColor = [System.Drawing.Color]::Transparent
-$discord.Cursor = "Hand"
-$discord.Add_Click({Start-Process "https://discord.gg/zP43MEEc3A"})
-
-$discordImg = New-Object System.Drawing.Bitmap(32,32)
-$g = [System.Drawing.Graphics]::FromImage($discordImg)
-$g.SmoothingMode = "AntiAlias"
-$brush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(88,101,242))
-
-# Discord logo shape
-$points = @(
-    [System.Drawing.PointF]::new(8,6),
-    [System.Drawing.PointF]::new(24,6),
-    [System.Drawing.PointF]::new(26,8),
-    [System.Drawing.PointF]::new(26,20),
-    [System.Drawing.PointF]::new(24,24),
-    [System.Drawing.PointF]::new(20,26),
-    [System.Drawing.PointF]::new(12,26),
-    [System.Drawing.PointF]::new(8,24),
-    [System.Drawing.PointF]::new(6,20),
-    [System.Drawing.PointF]::new(6,8)
-)
-$g.FillPolygon($brush, $points)
-
-# Eyes
-$eyeBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(18,18,18))
-$g.FillEllipse($eyeBrush, 10, 12, 5, 6)
-$g.FillEllipse($eyeBrush, 17, 12, 5, 6)
-
-$g.Dispose()
-$brush.Dispose()
-$eyeBrush.Dispose()
-
-$discordPic = New-Object System.Windows.Forms.PictureBox
-$discordPic.Image = $discordImg
-$discordPic.Size = New-Object System.Drawing.Size(32,32)
-$discordPic.Location = New-Object System.Drawing.Point(0,0)
-$discordPic.BackColor = [System.Drawing.Color]::Transparent
-$discordPic.SizeMode = "StretchImage"
-$discord.Controls.Add($discordPic)
-$form.Controls.Add($discord)
+# Discord
+$dc = New-Object Windows.Forms.Label
+$dc.Bounds = [Drawing.Rectangle]::new(280,15,25,25)
+$dc.Text = "D"
+$dc.Font = [Drawing.Font]::new("Arial Black",12,"Bold")
+$dc.ForeColor = [Drawing.Color]::FromArgb(88,101,242)
+$dc.TextAlign = "MiddleCenter"
+$dc.Cursor = "Hand"
+$dc.Add_Click({Start-Process "https://discord.gg/zP43MEEc3A"})
+$f.Controls.Add($dc)
 
 # Close
-$close = New-Object System.Windows.Forms.Label
-$close.Location = New-Object System.Drawing.Point(308,10)
-$close.Size = New-Object System.Drawing.Size(32,32)
-$close.Text = "×"
-$close.Font = New-Object System.Drawing.Font("Segoe UI",20,[System.Drawing.FontStyle]::Bold)
-$close.ForeColor = [System.Drawing.Color]::White
-$close.TextAlign = "MiddleCenter"
-$close.Cursor = "Hand"
-$close.Add_Click({$form.Close()})
-$close.Add_MouseEnter({$close.ForeColor=[System.Drawing.Color]::FromArgb(220,50,50)})
-$close.Add_MouseLeave({$close.ForeColor=[System.Drawing.Color]::White})
-$form.Controls.Add($close)
+$x = New-Object Windows.Forms.Label
+$x.Bounds = [Drawing.Rectangle]::new(315,12,30,30)
+$x.Text = "×"
+$x.Font = [Drawing.Font]::new("Arial",20,"Bold")
+$x.ForeColor = [Drawing.Color]::White
+$x.TextAlign = "MiddleCenter"
+$x.Cursor = "Hand"
+$x.Add_Click({$f.Close()})
+$x.Add_MouseEnter({$x.ForeColor=[Drawing.Color]::FromArgb(220,50,50)})
+$x.Add_MouseLeave({$x.ForeColor=[Drawing.Color]::White})
+$f.Controls.Add($x)
 
-# Left section
-$leftLbl = New-Object System.Windows.Forms.Label
-$leftLbl.Location = New-Object System.Drawing.Point(20,60)
-$leftLbl.Size = New-Object System.Drawing.Size(70,18)
-$leftLbl.Text = "Left click"
-$leftLbl.ForeColor = [System.Drawing.Color]::FromArgb(140,140,140)
-$leftLbl.Font = New-Object System.Drawing.Font("Segoe UI",9)
-$form.Controls.Add($leftLbl)
+# LEFT
+$ll = New-Object Windows.Forms.Label
+$ll.Bounds = [Drawing.Rectangle]::new(20,62,70,18)
+$ll.Text = "Left click"
+$ll.ForeColor = [Drawing.Color]::FromArgb(140,140,140)
+$ll.Font = [Drawing.Font]::new("Segoe UI",9)
+$f.Controls.Add($ll)
 
-$leftKeyBox = New-Object System.Windows.Forms.Label
-$leftKeyBox.Location = New-Object System.Drawing.Point(100,57)
-$leftKeyBox.Size = New-Object System.Drawing.Size(100,24)
-$leftKeyBox.Text = "none"
-$leftKeyBox.ForeColor = [System.Drawing.Color]::FromArgb(100,100,100)
-$leftKeyBox.BackColor = [System.Drawing.Color]::FromArgb(15,15,15)
-$leftKeyBox.Font = New-Object System.Drawing.Font("Consolas",10,[System.Drawing.FontStyle]::Bold)
-$leftKeyBox.TextAlign = "MiddleCenter"
-$leftKeyBox.Cursor = "Hand"
-$leftKeyBox.Add_Click({
-    $leftKeyBox.Text = "..."
-    $leftKeyBox.ForeColor = [System.Drawing.Color]::FromArgb(255,100,100)
-    $leftKeyBox.BackColor = [System.Drawing.Color]::FromArgb(30,15,15)
-    $script:leftListening = $true
+$lk = New-Object Windows.Forms.Label
+$lk.Bounds = [Drawing.Rectangle]::new(105,59,90,24)
+$lk.Text = "none"
+$lk.ForeColor = [Drawing.Color]::Gray
+$lk.BackColor = [Drawing.Color]::FromArgb(15,15,15)
+$lk.Font = [Drawing.Font]::new("Consolas",10,"Bold")
+$lk.TextAlign = "MiddleCenter"
+$lk.Cursor = "Hand"
+$lk.Add_Click({$lk.Text="...";$lk.ForeColor=[Drawing.Color]::FromArgb(255,100,100);$listen.left=$true})
+$f.Controls.Add($lk)
+
+$lc = New-Object Windows.Forms.Label
+$lc.Bounds = [Drawing.Rectangle]::new(310,62,30,18)
+$lc.Text = "10"
+$lc.ForeColor = [Drawing.Color]::White
+$lc.Font = [Drawing.Font]::new("Segoe UI",10,"Bold")
+$lc.TextAlign = "MiddleRight"
+$f.Controls.Add($lc)
+
+# Left slider visual
+$lb = New-Object Windows.Forms.Panel
+$lb.Bounds = [Drawing.Rectangle]::new(20,97,320,3)
+$lb.BackColor = [Drawing.Color]::FromArgb(50,50,50)
+$f.Controls.Add($lb)
+
+$lf = New-Object Windows.Forms.Panel
+$lf.Bounds = [Drawing.Rectangle]::new(20,97,128,3)
+$lf.BackColor = [Drawing.Color]::FromArgb(88,101,242)
+$f.Controls.Add($lf)
+
+$ls = New-Object Windows.Forms.TrackBar
+$ls.Bounds = [Drawing.Rectangle]::new(15,87,330,40)
+$ls.Minimum = 1
+$ls.Maximum = 25
+$ls.Value = 10
+$ls.TickStyle = "None"
+$ls.BackColor = [Drawing.Color]::FromArgb(15,15,15)
+$ls.Add_ValueChanged({
+    $lc.Text = $ls.Value.ToString()
+    $l.cps = $ls.Value
+    $l.timer.Interval = [Math]::Max(1,[int](1000.0/$ls.Value))
+    $lf.Width = [int](($ls.Value/25.0)*320)
 })
-$form.Controls.Add($leftKeyBox)
+$f.Controls.Add($ls)
 
-$leftCps = New-Object System.Windows.Forms.Label
-$leftCps.Location = New-Object System.Drawing.Point(295,60)
-$leftCps.Size = New-Object System.Drawing.Size(35,18)
-$leftCps.Text = "10"
-$leftCps.ForeColor = [System.Drawing.Color]::White
-$leftCps.Font = New-Object System.Drawing.Font("Segoe UI",10,[System.Drawing.FontStyle]::Bold)
-$leftCps.TextAlign = "MiddleRight"
-$form.Controls.Add($leftCps)
+# RIGHT
+$rl = New-Object Windows.Forms.Label
+$rl.Bounds = [Drawing.Rectangle]::new(20,137,70,18)
+$rl.Text = "Right click"
+$rl.ForeColor = [Drawing.Color]::FromArgb(140,140,140)
+$rl.Font = [Drawing.Font]::new("Segoe UI",9)
+$f.Controls.Add($rl)
 
-# Left slider bg
-$leftBg = New-Object System.Windows.Forms.Panel
-$leftBg.Location = New-Object System.Drawing.Point(20,93)
-$leftBg.Size = New-Object System.Drawing.Size(310,4)
-$leftBg.BackColor = [System.Drawing.Color]::FromArgb(45,45,45)
-$form.Controls.Add($leftBg)
+$rk = New-Object Windows.Forms.Label
+$rk.Bounds = [Drawing.Rectangle]::new(105,134,90,24)
+$rk.Text = "none"
+$rk.ForeColor = [Drawing.Color]::Gray
+$rk.BackColor = [Drawing.Color]::FromArgb(15,15,15)
+$rk.Font = [Drawing.Font]::new("Consolas",10,"Bold")
+$rk.TextAlign = "MiddleCenter"
+$rk.Cursor = "Hand"
+$rk.Add_Click({$rk.Text="...";$rk.ForeColor=[Drawing.Color]::FromArgb(255,100,100);$listen.right=$true})
+$f.Controls.Add($rk)
 
-# Left slider fill
-$leftFill = New-Object System.Windows.Forms.Panel
-$leftFill.Location = New-Object System.Drawing.Point(20,93)
-$leftFill.Size = New-Object System.Drawing.Size(124,4)
-$leftFill.BackColor = [System.Drawing.Color]::FromArgb(88,101,242)
-$form.Controls.Add($leftFill)
+$rc = New-Object Windows.Forms.Label
+$rc.Bounds = [Drawing.Rectangle]::new(310,137,30,18)
+$rc.Text = "10"
+$rc.ForeColor = [Drawing.Color]::White
+$rc.Font = [Drawing.Font]::new("Segoe UI",10,"Bold")
+$rc.TextAlign = "MiddleRight"
+$f.Controls.Add($rc)
 
-# Left slider
-$leftSlide = New-Object System.Windows.Forms.TrackBar
-$leftSlide.Location = New-Object System.Drawing.Point(15,84)
-$leftSlide.Size = New-Object System.Drawing.Size(320,40)
-$leftSlide.Minimum = 1
-$leftSlide.Maximum = 25
-$leftSlide.Value = 10
-$leftSlide.TickStyle = "None"
-$leftSlide.BackColor = [System.Drawing.Color]::FromArgb(18,18,18)
-$leftSlide.Add_ValueChanged({
-    $leftCps.Text = $leftSlide.Value.ToString()
-    $interval = [int]([Math]::Round(1000.0 / $leftSlide.Value))
-    $script:leftTimer.Interval = [Math]::Max(1, $interval)
-    $fillWidth = [int](($leftSlide.Value / 25.0) * 310)
-    $leftFill.Width = $fillWidth
+# Right slider visual
+$rb = New-Object Windows.Forms.Panel
+$rb.Bounds = [Drawing.Rectangle]::new(20,172,320,3)
+$rb.BackColor = [Drawing.Color]::FromArgb(50,50,50)
+$f.Controls.Add($rb)
+
+$rf = New-Object Windows.Forms.Panel
+$rf.Bounds = [Drawing.Rectangle]::new(20,172,128,3)
+$rf.BackColor = [Drawing.Color]::FromArgb(88,101,242)
+$f.Controls.Add($rf)
+
+$rs = New-Object Windows.Forms.TrackBar
+$rs.Bounds = [Drawing.Rectangle]::new(15,162,330,40)
+$rs.Minimum = 1
+$rs.Maximum = 25
+$rs.Value = 10
+$rs.TickStyle = "None"
+$rs.BackColor = [Drawing.Color]::FromArgb(15,15,15)
+$rs.Add_ValueChanged({
+    $rc.Text = $rs.Value.ToString()
+    $r.cps = $rs.Value
+    $r.timer.Interval = [Math]::Max(1,[int](1000.0/$rs.Value))
+    $rf.Width = [int](($rs.Value/25.0)*320)
 })
-$form.Controls.Add($leftSlide)
-
-# Right section
-$rightLbl = New-Object System.Windows.Forms.Label
-$rightLbl.Location = New-Object System.Drawing.Point(20,130)
-$rightLbl.Size = New-Object System.Drawing.Size(70,18)
-$rightLbl.Text = "Right click"
-$rightLbl.ForeColor = [System.Drawing.Color]::FromArgb(140,140,140)
-$rightLbl.Font = New-Object System.Drawing.Font("Segoe UI",9)
-$form.Controls.Add($rightLbl)
-
-$rightKeyBox = New-Object System.Windows.Forms.Label
-$rightKeyBox.Location = New-Object System.Drawing.Point(100,127)
-$rightKeyBox.Size = New-Object System.Drawing.Size(100,24)
-$rightKeyBox.Text = "none"
-$rightKeyBox.ForeColor = [System.Drawing.Color]::FromArgb(100,100,100)
-$rightKeyBox.BackColor = [System.Drawing.Color]::FromArgb(15,15,15)
-$rightKeyBox.Font = New-Object System.Drawing.Font("Consolas",10,[System.Drawing.FontStyle]::Bold)
-$rightKeyBox.TextAlign = "MiddleCenter"
-$rightKeyBox.Cursor = "Hand"
-$rightKeyBox.Add_Click({
-    $rightKeyBox.Text = "..."
-    $rightKeyBox.ForeColor = [System.Drawing.Color]::FromArgb(255,100,100)
-    $rightKeyBox.BackColor = [System.Drawing.Color]::FromArgb(30,15,15)
-    $script:rightListening = $true
-})
-$form.Controls.Add($rightKeyBox)
-
-$rightCps = New-Object System.Windows.Forms.Label
-$rightCps.Location = New-Object System.Drawing.Point(295,130)
-$rightCps.Size = New-Object System.Drawing.Size(35,18)
-$rightCps.Text = "10"
-$rightCps.ForeColor = [System.Drawing.Color]::White
-$rightCps.Font = New-Object System.Drawing.Font("Segoe UI",10,[System.Drawing.FontStyle]::Bold)
-$rightCps.TextAlign = "MiddleRight"
-$form.Controls.Add($rightCps)
-
-# Right slider bg
-$rightBg = New-Object System.Windows.Forms.Panel
-$rightBg.Location = New-Object System.Drawing.Point(20,163)
-$rightBg.Size = New-Object System.Drawing.Size(310,4)
-$rightBg.BackColor = [System.Drawing.Color]::FromArgb(45,45,45)
-$form.Controls.Add($rightBg)
-
-# Right slider fill
-$rightFill = New-Object System.Windows.Forms.Panel
-$rightFill.Location = New-Object System.Drawing.Point(20,163)
-$rightFill.Size = New-Object System.Drawing.Size(124,4)
-$rightFill.BackColor = [System.Drawing.Color]::FromArgb(88,101,242)
-$form.Controls.Add($rightFill)
-
-# Right slider
-$rightSlide = New-Object System.Windows.Forms.TrackBar
-$rightSlide.Location = New-Object System.Drawing.Point(15,154)
-$rightSlide.Size = New-Object System.Drawing.Size(320,40)
-$rightSlide.Minimum = 1
-$rightSlide.Maximum = 25
-$rightSlide.Value = 10
-$rightSlide.TickStyle = "None"
-$rightSlide.BackColor = [System.Drawing.Color]::FromArgb(18,18,18)
-$rightSlide.Add_ValueChanged({
-    $rightCps.Text = $rightSlide.Value.ToString()
-    $interval = [int]([Math]::Round(1000.0 / $rightSlide.Value))
-    $script:rightTimer.Interval = [Math]::Max(1, $interval)
-    $fillWidth = [int](($rightSlide.Value / 25.0) * 310)
-    $rightFill.Width = $fillWidth
-})
-$form.Controls.Add($rightSlide)
+$f.Controls.Add($rs)
 
 # Stealth
-$stealth = New-Object System.Windows.Forms.Button
-$stealth.Location = New-Object System.Drawing.Point(20,200)
-$stealth.Size = New-Object System.Drawing.Size(310,30)
-$stealth.Text = "Stealth Mode: OFF"
-$stealth.BackColor = [System.Drawing.Color]::FromArgb(70,60,20)
-$stealth.ForeColor = [System.Drawing.Color]::FromArgb(255,200,100)
-$stealth.FlatStyle = "Flat"
-$stealth.FlatAppearance.BorderSize = 0
-$stealth.Font = New-Object System.Drawing.Font("Segoe UI",9,[System.Drawing.FontStyle]::Bold)
-$stealth.Cursor = "Hand"
-$stealth.Add_Click({
-    $script:stealthMode = -not $script:stealthMode
-    if($script:stealthMode){
-        $stealth.Text = "Stealth Mode: ON"
-        $stealth.BackColor = [System.Drawing.Color]::FromArgb(20,70,20)
-        $stealth.ForeColor = [System.Drawing.Color]::FromArgb(100,255,100)
-        try{
-            $h = $form.Handle
-            $s = [NativeMethods]::GetWindowLong($h,-20)
-            [NativeMethods]::SetWindowLong($h,-20,$s -bor 0x80)|Out-Null
-            $v=1;[NativeMethods]::DwmSetWindowAttribute($h,12,[ref]$v,4)|Out-Null
-            $form.ShowInTaskbar=$false
-        }catch{}
-    }else{
-        $stealth.Text = "Stealth Mode: OFF"
-        $stealth.BackColor = [System.Drawing.Color]::FromArgb(70,60,20)
-        $stealth.ForeColor = [System.Drawing.Color]::FromArgb(255,200,100)
-        try{
-            $h = $form.Handle
-            $s = [NativeMethods]::GetWindowLong($h,-20)
-            [NativeMethods]::SetWindowLong($h,-20,$s -band (-bnot 0x80))|Out-Null
-            $v=0;[NativeMethods]::DwmSetWindowAttribute($h,12,[ref]$v,4)|Out-Null
-            $form.ShowInTaskbar=$true
-        }catch{}
-    }
-})
-$form.Controls.Add($stealth)
+$s = New-Object Windows.Forms.Button
+$s.Bounds = [Drawing.Rectangle]::new(20,210,320,30)
+$s.Text = "Stealth Mode: OFF"
+$s.BackColor = [Drawing.Color]::FromArgb(70,60,20)
+$s.ForeColor = [Drawing.Color]::FromArgb(255,200,100)
+$s.FlatStyle = "Flat"
+$s.FlatAppearance.BorderSize = 0
+$s.Font = [Drawing.Font]::new("Segoe UI",9,"Bold")
+$s.Cursor = "Hand"
+$f.Controls.Add($s)
 
-# Self Destruct
-$destruct = New-Object System.Windows.Forms.Button
-$destruct.Location = New-Object System.Drawing.Point(20,236)
-$destruct.Size = New-Object System.Drawing.Size(310,30)
-$destruct.Text = "SELF DESTRUCT"
-$destruct.BackColor = [System.Drawing.Color]::FromArgb(120,25,25)
-$destruct.ForeColor = [System.Drawing.Color]::FromArgb(255,120,120)
-$destruct.FlatStyle = "Flat"
-$destruct.FlatAppearance.BorderSize = 0
-$destruct.Font = New-Object System.Drawing.Font("Segoe UI",9,[System.Drawing.FontStyle]::Bold)
-$destruct.Cursor = "Hand"
-$destruct.Add_Click({
-    if([System.Windows.Forms.MessageBox]::Show("Close everything?","Self Destruct","YesNo","Warning") -eq "Yes"){
-        $script:leftTimer.Stop();$script:rightTimer.Stop();$script:monitorTimer.Stop()
-        try{
-            Get-Process|?{$_.ProcessName -match "powershell|pwsh|cmd" -and $_.Id -ne $PID}|%{Stop-Process $_.Id -Force -EA 0}
-        }catch{}
-        $form.Close();Stop-Process -Id $PID -Force
+# Destruct
+$sd = New-Object Windows.Forms.Button
+$sd.Bounds = [Drawing.Rectangle]::new(20,246,320,30)
+$sd.Text = "SELF DESTRUCT"
+$sd.BackColor = [Drawing.Color]::FromArgb(120,25,25)
+$sd.ForeColor = [Drawing.Color]::FromArgb(255,120,120)
+$sd.FlatStyle = "Flat"
+$sd.FlatAppearance.BorderSize = 0
+$sd.Font = [Drawing.Font]::new("Segoe UI",9,"Bold")
+$sd.Cursor = "Hand"
+$sd.Add_Click({
+    if([Windows.Forms.MessageBox]::Show("Close?","Self Destruct","YesNo","Warning") -eq "Yes"){
+        Get-Process|?{$_.ProcessName -match "powershell|pwsh|cmd" -and $_.Id -ne $PID}|%{Stop-Process $_.Id -Force -EA 0}
+        $f.Close()
+        Stop-Process -Id $PID -Force
     }
 })
-$form.Controls.Add($destruct)
+$f.Controls.Add($sd)
 
 # Timers
-$script:leftTimer.Add_Tick({Do-LeftClick})
-$script:rightTimer.Add_Tick({Do-RightClick})
-$script:leftTimer.Interval = 100
-$script:rightTimer.Interval = 100
-$script:monitorTimer.Interval = 10
-$script:monitorTimer.Add_Tick({Update-Monitor})
-$script:monitorTimer.Start()
+$l.timer = New-Object Windows.Forms.Timer
+$l.timer.Interval = 100
+$l.timer.Add_Tick({Click "left"})
 
-$form.Add_FormClosing({
-    $script:leftTimer.Dispose()
-    $script:rightTimer.Dispose()
-    $script:monitorTimer.Dispose()
-})
+$r.timer = New-Object Windows.Forms.Timer
+$r.timer.Interval = 100
+$r.timer.Add_Tick({Click "right"})
 
-[System.Windows.Forms.Application]::Run($form)
+$m = New-Object Windows.Forms.Timer
+$m.Interval = 5
+$m.Add_Tick({Monitor})
+$m.Start()
+
+$f.Add_FormClosing({$l.timer.Dispose();$r.timer.Dispose();$m.Dispose()})
+
+[Windows.Forms.Application]::Run($f)
