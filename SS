@@ -95,15 +95,13 @@ function Get-KeyName {
     return "Key"
 }
 
-# Función para capturar tecla presionada (excluyendo botones del mouse si están configurados)
+# Función para capturar tecla presionada
 function Get-PressedKey {
-    param([bool]$excludeLeftClick = $false, [bool]$excludeRightClick = $false)
+    param([int]$excludeKey = 0)
     
     for ($i = 0x01; $i -le 0xFE; $i++) {
-        # Excluir botón izquierdo si se está configurando left click
-        if ($excludeLeftClick -and $i -eq 0x01) { continue }
-        # Excluir botón derecho si se está configurando right click
-        if ($excludeRightClick -and $i -eq 0x02) { continue }
+        # Excluir la tecla especificada
+        if ($i -eq $excludeKey) { continue }
         
         $state = [NativeMethods]::GetAsyncKeyState($i)
         if (($state -band 0x8000) -ne 0) {
@@ -156,13 +154,13 @@ function Update-KeyStates {
     
     # Modo escucha para tecla izquierda
     if ($script:leftListeningMode) {
-        $pressedKey = Get-PressedKey -excludeLeftClick $true
+        $pressedKey = Get-PressedKey
         if ($pressedKey -ne 0) {
             $script:leftHotkey = $pressedKey
             $keyName = Get-KeyName $pressedKey
             $leftKeyLabel.Text = $keyName
             $leftKeyLabel.ForeColor = [System.Drawing.Color]::White
-            $leftKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(15, 15, 15)
+            $leftKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(25, 25, 25)
             $script:leftListeningMode = $false
             $script:leftEnabled = $true
             Start-Sleep -Milliseconds 200
@@ -171,13 +169,13 @@ function Update-KeyStates {
     
     # Modo escucha para tecla derecha
     if ($script:rightListeningMode) {
-        $pressedKey = Get-PressedKey -excludeRightClick $true
+        $pressedKey = Get-PressedKey
         if ($pressedKey -ne 0) {
             $script:rightHotkey = $pressedKey
             $keyName = Get-KeyName $pressedKey
             $rightKeyLabel.Text = $keyName
             $rightKeyLabel.ForeColor = [System.Drawing.Color]::White
-            $rightKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(15, 15, 15)
+            $rightKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(25, 25, 25)
             $script:rightListeningMode = $false
             $script:rightEnabled = $true
             Start-Sleep -Milliseconds 200
@@ -232,8 +230,8 @@ $form.Add_MouseUp({
 $titleLabel = New-Object System.Windows.Forms.Label
 $titleLabel.Location = New-Object System.Drawing.Point(15, 12)
 $titleLabel.Size = New-Object System.Drawing.Size(250, 28)
-$titleLabel.Text = "𝐈𝐜𝐨𝐧𝟏𝐂𝐂𝐥𝐢𝐜𝐤𝐞𝐫"
-$titleLabel.Font = New-Object System.Drawing.Font("Arial", 14, [System.Drawing.FontStyle]::Bold)
+$titleLabel.Text = "Icon1cClicker"
+$titleLabel.Font = New-Object System.Drawing.Font("Impact", 16, [System.Drawing.FontStyle]::Regular)
 $titleLabel.ForeColor = [System.Drawing.Color]::White
 $form.Controls.Add($titleLabel)
 
@@ -241,9 +239,9 @@ $form.Controls.Add($titleLabel)
 $discordBtn = New-Object System.Windows.Forms.Label
 $discordBtn.Location = New-Object System.Drawing.Point(265, 10)
 $discordBtn.Size = New-Object System.Drawing.Size(28, 28)
-$discordBtn.Text = "💬"
+$discordBtn.Text = "D"
 $discordBtn.ForeColor = [System.Drawing.Color]::FromArgb(88, 101, 242)
-$discordBtn.Font = New-Object System.Drawing.Font("Segoe UI", 16)
+$discordBtn.Font = New-Object System.Drawing.Font("Arial Black", 14, [System.Drawing.FontStyle]::Bold)
 $discordBtn.TextAlign = "MiddleCenter"
 $discordBtn.Cursor = [System.Windows.Forms.Cursors]::Hand
 $form.Controls.Add($discordBtn)
@@ -269,14 +267,15 @@ $leftLabel.Font = New-Object System.Drawing.Font("Arial", 9)
 $form.Controls.Add($leftLabel)
 
 $leftKeyLabel = New-Object System.Windows.Forms.Label
-$leftKeyLabel.Location = New-Object System.Drawing.Point(100, 55)
-$leftKeyLabel.Size = New-Object System.Drawing.Size(80, 26)
+$leftKeyLabel.Location = New-Object System.Drawing.Point(95, 55)
+$leftKeyLabel.Size = New-Object System.Drawing.Size(90, 28)
 $leftKeyLabel.Text = "none"
-$leftKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(100, 100, 100)
-$leftKeyLabel.Font = New-Object System.Drawing.Font("Arial", 10)
+$leftKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(120, 120, 120)
+$leftKeyLabel.Font = New-Object System.Drawing.Font("Consolas", 11, [System.Drawing.FontStyle]::Bold)
 $leftKeyLabel.Cursor = [System.Windows.Forms.Cursors]::Hand
-$leftKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(15, 15, 15)
+$leftKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(25, 25, 25)
 $leftKeyLabel.TextAlign = "MiddleCenter"
+$leftKeyLabel.BorderStyle = "FixedSingle"
 $form.Controls.Add($leftKeyLabel)
 
 $leftCpsLabel = New-Object System.Windows.Forms.Label
@@ -308,14 +307,15 @@ $rightLabel.Font = New-Object System.Drawing.Font("Arial", 9)
 $form.Controls.Add($rightLabel)
 
 $rightKeyLabel = New-Object System.Windows.Forms.Label
-$rightKeyLabel.Location = New-Object System.Drawing.Point(100, 120)
-$rightKeyLabel.Size = New-Object System.Drawing.Size(80, 26)
+$rightKeyLabel.Location = New-Object System.Drawing.Point(95, 120)
+$rightKeyLabel.Size = New-Object System.Drawing.Size(90, 28)
 $rightKeyLabel.Text = "none"
-$rightKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(100, 100, 100)
-$rightKeyLabel.Font = New-Object System.Drawing.Font("Arial", 10)
+$rightKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(120, 120, 120)
+$rightKeyLabel.Font = New-Object System.Drawing.Font("Consolas", 11, [System.Drawing.FontStyle]::Bold)
 $rightKeyLabel.Cursor = [System.Windows.Forms.Cursors]::Hand
-$rightKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(15, 15, 15)
+$rightKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(25, 25, 25)
 $rightKeyLabel.TextAlign = "MiddleCenter"
+$rightKeyLabel.BorderStyle = "FixedSingle"
 $form.Controls.Add($rightKeyLabel)
 
 $rightCpsLabel = New-Object System.Windows.Forms.Label
@@ -365,16 +365,16 @@ $form.Controls.Add($selfDestructBtn)
 
 # Event Handlers
 $leftKeyLabel.Add_Click({
-    $leftKeyLabel.Text = "..."
-    $leftKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(220, 50, 50)
-    $leftKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(40, 15, 15)
+    $leftKeyLabel.Text = "Press key..."
+    $leftKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(255, 120, 120)
+    $leftKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(35, 20, 20)
     $script:leftListeningMode = $true
 })
 
 $rightKeyLabel.Add_Click({
-    $rightKeyLabel.Text = "..."
-    $rightKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(220, 50, 50)
-    $rightKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(40, 15, 15)
+    $rightKeyLabel.Text = "Press key..."
+    $rightKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(255, 120, 120)
+    $rightKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(35, 20, 20)
     $script:rightListeningMode = $true
 })
 
