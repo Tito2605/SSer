@@ -156,13 +156,24 @@ function Update-KeyStates {
     if ($script:leftListeningMode) {
         $pressedKey = Get-PressedKey
         if ($pressedKey -ne 0) {
-            $script:leftHotkey = $pressedKey
-            $keyName = Get-KeyName $pressedKey
-            $leftKeyLabel.Text = $keyName
-            $leftKeyLabel.ForeColor = [System.Drawing.Color]::White
-            $leftKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(25, 25, 25)
-            $script:leftListeningMode = $false
-            $script:leftEnabled = $true
+            # ESC para desvincular
+            if ($pressedKey -eq 0x1B) {
+                $script:leftHotkey = 0x00
+                $leftKeyLabel.Text = "none"
+                $leftKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(120, 120, 120)
+                $leftKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(15, 15, 15)
+                $script:leftListeningMode = $false
+                $script:leftEnabled = $false
+                $script:leftClickTimer.Stop()
+            } else {
+                $script:leftHotkey = $pressedKey
+                $keyName = Get-KeyName $pressedKey
+                $leftKeyLabel.Text = $keyName
+                $leftKeyLabel.ForeColor = [System.Drawing.Color]::White
+                $leftKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(15, 15, 15)
+                $script:leftListeningMode = $false
+                $script:leftEnabled = $true
+            }
             Start-Sleep -Milliseconds 200
         }
     }
@@ -171,13 +182,24 @@ function Update-KeyStates {
     if ($script:rightListeningMode) {
         $pressedKey = Get-PressedKey
         if ($pressedKey -ne 0) {
-            $script:rightHotkey = $pressedKey
-            $keyName = Get-KeyName $pressedKey
-            $rightKeyLabel.Text = $keyName
-            $rightKeyLabel.ForeColor = [System.Drawing.Color]::White
-            $rightKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(25, 25, 25)
-            $script:rightListeningMode = $false
-            $script:rightEnabled = $true
+            # ESC para desvincular
+            if ($pressedKey -eq 0x1B) {
+                $script:rightHotkey = 0x00
+                $rightKeyLabel.Text = "none"
+                $rightKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(120, 120, 120)
+                $rightKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(15, 15, 15)
+                $script:rightListeningMode = $false
+                $script:rightEnabled = $false
+                $script:rightClickTimer.Stop()
+            } else {
+                $script:rightHotkey = $pressedKey
+                $keyName = Get-KeyName $pressedKey
+                $rightKeyLabel.Text = $keyName
+                $rightKeyLabel.ForeColor = [System.Drawing.Color]::White
+                $rightKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(15, 15, 15)
+                $script:rightListeningMode = $false
+                $script:rightEnabled = $true
+            }
             Start-Sleep -Milliseconds 200
         }
     }
@@ -235,15 +257,47 @@ $titleLabel.Font = New-Object System.Drawing.Font("Impact", 16, [System.Drawing.
 $titleLabel.ForeColor = [System.Drawing.Color]::White
 $form.Controls.Add($titleLabel)
 
-# Botón Discord
-$discordBtn = New-Object System.Windows.Forms.Label
+# Botón Discord con logo SVG
+$discordBtn = New-Object System.Windows.Forms.PictureBox
 $discordBtn.Location = New-Object System.Drawing.Point(265, 10)
 $discordBtn.Size = New-Object System.Drawing.Size(28, 28)
-$discordBtn.Text = "D"
-$discordBtn.ForeColor = [System.Drawing.Color]::FromArgb(88, 101, 242)
-$discordBtn.Font = New-Object System.Drawing.Font("Arial Black", 14, [System.Drawing.FontStyle]::Bold)
-$discordBtn.TextAlign = "MiddleCenter"
 $discordBtn.Cursor = [System.Windows.Forms.Cursors]::Hand
+$discordBtn.BackColor = [System.Drawing.Color]::Transparent
+
+# Crear imagen del logo de Discord
+$discordBitmap = New-Object System.Drawing.Bitmap(28, 28)
+$graphics = [System.Drawing.Graphics]::FromImage($discordBitmap)
+$graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+
+# Color Discord
+$discordColor = [System.Drawing.Color]::FromArgb(88, 101, 242)
+$brush = New-Object System.Drawing.SolidBrush($discordColor)
+
+# Dibujar forma simplificada del logo Discord (cabeza con ojos)
+$path = New-Object System.Drawing.Drawing2D.GraphicsPath
+
+# Cabeza (rectángulo redondeado superior)
+$path.AddArc(4, 4, 6, 6, 180, 90)
+$path.AddLine(7, 4, 21, 4)
+$path.AddArc(18, 4, 6, 6, 270, 90)
+$path.AddLine(24, 7, 24, 18)
+$path.AddArc(18, 18, 6, 6, 0, 90)
+$path.AddLine(21, 24, 7, 24)
+$path.AddArc(4, 18, 6, 6, 90, 90)
+$path.CloseFigure()
+
+$graphics.FillPath($brush, $path)
+
+# Ojos
+$eyeBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(15, 15, 15))
+$graphics.FillEllipse($eyeBrush, 8, 11, 4, 5)
+$graphics.FillEllipse($eyeBrush, 16, 11, 4, 5)
+
+$graphics.Dispose()
+$brush.Dispose()
+$eyeBrush.Dispose()
+
+$discordBtn.Image = $discordBitmap
 $form.Controls.Add($discordBtn)
 
 # Botón cerrar
@@ -273,9 +327,8 @@ $leftKeyLabel.Text = "none"
 $leftKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(120, 120, 120)
 $leftKeyLabel.Font = New-Object System.Drawing.Font("Consolas", 11, [System.Drawing.FontStyle]::Bold)
 $leftKeyLabel.Cursor = [System.Windows.Forms.Cursors]::Hand
-$leftKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(25, 25, 25)
+$leftKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(15, 15, 15)
 $leftKeyLabel.TextAlign = "MiddleCenter"
-$leftKeyLabel.BorderStyle = "FixedSingle"
 $form.Controls.Add($leftKeyLabel)
 
 $leftCpsLabel = New-Object System.Windows.Forms.Label
@@ -286,6 +339,19 @@ $leftCpsLabel.ForeColor = [System.Drawing.Color]::White
 $leftCpsLabel.Font = New-Object System.Drawing.Font("Arial", 11, [System.Drawing.FontStyle]::Bold)
 $leftCpsLabel.TextAlign = "MiddleRight"
 $form.Controls.Add($leftCpsLabel)
+
+# Left CPS Slider personalizado
+$leftSliderBg = New-Object System.Windows.Forms.Panel
+$leftSliderBg.Location = New-Object System.Drawing.Point(20, 90)
+$leftSliderBg.Size = New-Object System.Drawing.Size(295, 4)
+$leftSliderBg.BackColor = [System.Drawing.Color]::FromArgb(50, 50, 50)
+$form.Controls.Add($leftSliderBg)
+
+$leftSliderFill = New-Object System.Windows.Forms.Panel
+$leftSliderFill.Location = New-Object System.Drawing.Point(20, 90)
+$leftSliderFill.Size = New-Object System.Drawing.Size(118, 4)
+$leftSliderFill.BackColor = [System.Drawing.Color]::FromArgb(88, 101, 242)
+$form.Controls.Add($leftSliderFill)
 
 $leftSlider = New-Object System.Windows.Forms.TrackBar
 $leftSlider.Location = New-Object System.Drawing.Point(20, 83)
@@ -313,9 +379,8 @@ $rightKeyLabel.Text = "none"
 $rightKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(120, 120, 120)
 $rightKeyLabel.Font = New-Object System.Drawing.Font("Consolas", 11, [System.Drawing.FontStyle]::Bold)
 $rightKeyLabel.Cursor = [System.Windows.Forms.Cursors]::Hand
-$rightKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(25, 25, 25)
+$rightKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(15, 15, 15)
 $rightKeyLabel.TextAlign = "MiddleCenter"
-$rightKeyLabel.BorderStyle = "FixedSingle"
 $form.Controls.Add($rightKeyLabel)
 
 $rightCpsLabel = New-Object System.Windows.Forms.Label
@@ -326,6 +391,19 @@ $rightCpsLabel.ForeColor = [System.Drawing.Color]::White
 $rightCpsLabel.Font = New-Object System.Drawing.Font("Arial", 11, [System.Drawing.FontStyle]::Bold)
 $rightCpsLabel.TextAlign = "MiddleRight"
 $form.Controls.Add($rightCpsLabel)
+
+# Right CPS Slider personalizado
+$rightSliderBg = New-Object System.Windows.Forms.Panel
+$rightSliderBg.Location = New-Object System.Drawing.Point(20, 155)
+$rightSliderBg.Size = New-Object System.Drawing.Size(295, 4)
+$rightSliderBg.BackColor = [System.Drawing.Color]::FromArgb(50, 50, 50)
+$form.Controls.Add($rightSliderBg)
+
+$rightSliderFill = New-Object System.Windows.Forms.Panel
+$rightSliderFill.Location = New-Object System.Drawing.Point(20, 155)
+$rightSliderFill.Size = New-Object System.Drawing.Size(118, 4)
+$rightSliderFill.BackColor = [System.Drawing.Color]::FromArgb(88, 101, 242)
+$form.Controls.Add($rightSliderFill)
 
 $rightSlider = New-Object System.Windows.Forms.TrackBar
 $rightSlider.Location = New-Object System.Drawing.Point(20, 148)
@@ -367,14 +445,14 @@ $form.Controls.Add($selfDestructBtn)
 $leftKeyLabel.Add_Click({
     $leftKeyLabel.Text = "Press key..."
     $leftKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(255, 120, 120)
-    $leftKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(35, 20, 20)
+    $leftKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(25, 15, 15)
     $script:leftListeningMode = $true
 })
 
 $rightKeyLabel.Add_Click({
     $rightKeyLabel.Text = "Press key..."
     $rightKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(255, 120, 120)
-    $rightKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(35, 20, 20)
+    $rightKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(25, 15, 15)
     $script:rightListeningMode = $true
 })
 
@@ -382,12 +460,20 @@ $leftSlider.Add_ValueChanged({
     $leftCpsLabel.Text = $leftSlider.Value.ToString()
     $interval = 1000.0 / [double]$leftSlider.Value
     $script:leftClickTimer.Interval = [Math]::Max(1, [int]$interval)
+    
+    # Actualizar barra de progreso
+    $fillWidth = ($leftSlider.Value / 25.0) * 295
+    $leftSliderFill.Width = [int]$fillWidth
 })
 
 $rightSlider.Add_ValueChanged({
     $rightCpsLabel.Text = $rightSlider.Value.ToString()
     $interval = 1000.0 / [double]$rightSlider.Value
     $script:rightClickTimer.Interval = [Math]::Max(1, [int]$interval)
+    
+    # Actualizar barra de progreso
+    $fillWidth = ($rightSlider.Value / 25.0) * 295
+    $rightSliderFill.Width = [int]$fillWidth
 })
 
 $discordBtn.Add_Click({
