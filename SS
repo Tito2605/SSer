@@ -42,7 +42,9 @@ public class NativeMethods {
     
     public const int GWL_EXSTYLE = -20;
     public const int WS_EX_TOOLWINDOW = 0x00000080;
+    public const int WS_EX_NOACTIVATE = 0x08000000;
     public const int DWMWA_EXCLUDED_FROM_PEEK = 12;
+    public const int DWMWA_CLOAK = 13;
 }
 "@
 } catch {
@@ -61,7 +63,7 @@ $script:leftPreviousState = $false
 $script:rightPreviousState = $false
 $script:leftListeningMode = $false
 $script:rightListeningMode = $false
-$script:stealthMode = $true
+$script:stealthMode = $false
 
 # Función para obtener el nombre de la tecla
 function Get-KeyName {
@@ -93,9 +95,16 @@ function Get-KeyName {
     return "Key"
 }
 
-# Función para capturar tecla presionada
+# Función para capturar tecla presionada (excluyendo botones del mouse si están configurados)
 function Get-PressedKey {
+    param([bool]$excludeLeftClick = $false, [bool]$excludeRightClick = $false)
+    
     for ($i = 0x01; $i -le 0xFE; $i++) {
+        # Excluir botón izquierdo si se está configurando left click
+        if ($excludeLeftClick -and $i -eq 0x01) { continue }
+        # Excluir botón derecho si se está configurando right click
+        if ($excludeRightClick -and $i -eq 0x02) { continue }
+        
         $state = [NativeMethods]::GetAsyncKeyState($i)
         if (($state -band 0x8000) -ne 0) {
             return $i
@@ -147,12 +156,13 @@ function Update-KeyStates {
     
     # Modo escucha para tecla izquierda
     if ($script:leftListeningMode) {
-        $pressedKey = Get-PressedKey
+        $pressedKey = Get-PressedKey -excludeLeftClick $true
         if ($pressedKey -ne 0) {
             $script:leftHotkey = $pressedKey
             $keyName = Get-KeyName $pressedKey
             $leftKeyLabel.Text = $keyName
             $leftKeyLabel.ForeColor = [System.Drawing.Color]::White
+            $leftKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(15, 15, 15)
             $script:leftListeningMode = $false
             $script:leftEnabled = $true
             Start-Sleep -Milliseconds 200
@@ -161,12 +171,13 @@ function Update-KeyStates {
     
     # Modo escucha para tecla derecha
     if ($script:rightListeningMode) {
-        $pressedKey = Get-PressedKey
+        $pressedKey = Get-PressedKey -excludeRightClick $true
         if ($pressedKey -ne 0) {
             $script:rightHotkey = $pressedKey
             $keyName = Get-KeyName $pressedKey
             $rightKeyLabel.Text = $keyName
             $rightKeyLabel.ForeColor = [System.Drawing.Color]::White
+            $rightKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(15, 15, 15)
             $script:rightListeningMode = $false
             $script:rightEnabled = $true
             Start-Sleep -Milliseconds 200
@@ -177,11 +188,11 @@ function Update-KeyStates {
 # Crear formulario
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "Icon1cClicker"
-$form.Size = New-Object System.Drawing.Size(330, 250)
+$form.Size = New-Object System.Drawing.Size(340, 270)
 $form.StartPosition = "CenterScreen"
 $form.FormBorderStyle = "None"
 $form.BackColor = [System.Drawing.Color]::FromArgb(15, 15, 15)
-$form.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+$form.Font = New-Object System.Drawing.Font("Arial", 9)
 $form.TopMost = $false
 $form.ShowInTaskbar = $true
 
@@ -220,56 +231,66 @@ $form.Add_MouseUp({
 # Título
 $titleLabel = New-Object System.Windows.Forms.Label
 $titleLabel.Location = New-Object System.Drawing.Point(15, 12)
-$titleLabel.Size = New-Object System.Drawing.Size(250, 25)
-$titleLabel.Text = "Icon1cClicker"
-$titleLabel.Font = New-Object System.Drawing.Font("Segoe UI", 12, [System.Drawing.FontStyle]::Bold)
+$titleLabel.Size = New-Object System.Drawing.Size(250, 28)
+$titleLabel.Text = "𝐈𝐜𝐨𝐧𝟏𝐂𝐂𝐥𝐢𝐜𝐤𝐞𝐫"
+$titleLabel.Font = New-Object System.Drawing.Font("Arial", 14, [System.Drawing.FontStyle]::Bold)
 $titleLabel.ForeColor = [System.Drawing.Color]::White
 $form.Controls.Add($titleLabel)
 
+# Botón Discord
+$discordBtn = New-Object System.Windows.Forms.Label
+$discordBtn.Location = New-Object System.Drawing.Point(265, 10)
+$discordBtn.Size = New-Object System.Drawing.Size(28, 28)
+$discordBtn.Text = "💬"
+$discordBtn.ForeColor = [System.Drawing.Color]::FromArgb(88, 101, 242)
+$discordBtn.Font = New-Object System.Drawing.Font("Segoe UI", 16)
+$discordBtn.TextAlign = "MiddleCenter"
+$discordBtn.Cursor = [System.Windows.Forms.Cursors]::Hand
+$form.Controls.Add($discordBtn)
+
 # Botón cerrar
 $closeBtn = New-Object System.Windows.Forms.Label
-$closeBtn.Location = New-Object System.Drawing.Point(295, 10)
-$closeBtn.Size = New-Object System.Drawing.Size(25, 25)
+$closeBtn.Location = New-Object System.Drawing.Point(298, 8)
+$closeBtn.Size = New-Object System.Drawing.Size(32, 32)
 $closeBtn.Text = "×"
-$closeBtn.ForeColor = [System.Drawing.Color]::FromArgb(150, 150, 150)
-$closeBtn.Font = New-Object System.Drawing.Font("Segoe UI", 16)
+$closeBtn.ForeColor = [System.Drawing.Color]::White
+$closeBtn.Font = New-Object System.Drawing.Font("Arial", 20, [System.Drawing.FontStyle]::Bold)
 $closeBtn.TextAlign = "MiddleCenter"
 $closeBtn.Cursor = [System.Windows.Forms.Cursors]::Hand
 $form.Controls.Add($closeBtn)
 
 # Left Click Row
 $leftLabel = New-Object System.Windows.Forms.Label
-$leftLabel.Location = New-Object System.Drawing.Point(20, 55)
+$leftLabel.Location = New-Object System.Drawing.Point(20, 58)
 $leftLabel.Size = New-Object System.Drawing.Size(65, 20)
 $leftLabel.Text = "Left click"
 $leftLabel.ForeColor = [System.Drawing.Color]::FromArgb(130, 130, 130)
-$leftLabel.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+$leftLabel.Font = New-Object System.Drawing.Font("Arial", 9)
 $form.Controls.Add($leftLabel)
 
 $leftKeyLabel = New-Object System.Windows.Forms.Label
-$leftKeyLabel.Location = New-Object System.Drawing.Point(100, 53)
-$leftKeyLabel.Size = New-Object System.Drawing.Size(80, 24)
+$leftKeyLabel.Location = New-Object System.Drawing.Point(100, 55)
+$leftKeyLabel.Size = New-Object System.Drawing.Size(80, 26)
 $leftKeyLabel.Text = "none"
 $leftKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(100, 100, 100)
-$leftKeyLabel.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+$leftKeyLabel.Font = New-Object System.Drawing.Font("Arial", 10)
 $leftKeyLabel.Cursor = [System.Windows.Forms.Cursors]::Hand
-$leftKeyLabel.BorderStyle = "FixedSingle"
-$leftKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(22, 22, 22)
+$leftKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(15, 15, 15)
 $leftKeyLabel.TextAlign = "MiddleCenter"
 $form.Controls.Add($leftKeyLabel)
 
 $leftCpsLabel = New-Object System.Windows.Forms.Label
-$leftCpsLabel.Location = New-Object System.Drawing.Point(270, 55)
-$leftCpsLabel.Size = New-Object System.Drawing.Size(40, 20)
+$leftCpsLabel.Location = New-Object System.Drawing.Point(280, 58)
+$leftCpsLabel.Size = New-Object System.Drawing.Size(35, 20)
 $leftCpsLabel.Text = "10"
 $leftCpsLabel.ForeColor = [System.Drawing.Color]::White
-$leftCpsLabel.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+$leftCpsLabel.Font = New-Object System.Drawing.Font("Arial", 11, [System.Drawing.FontStyle]::Bold)
 $leftCpsLabel.TextAlign = "MiddleRight"
 $form.Controls.Add($leftCpsLabel)
 
 $leftSlider = New-Object System.Windows.Forms.TrackBar
-$leftSlider.Location = New-Object System.Drawing.Point(20, 80)
-$leftSlider.Size = New-Object System.Drawing.Size(290, 30)
+$leftSlider.Location = New-Object System.Drawing.Point(20, 83)
+$leftSlider.Size = New-Object System.Drawing.Size(295, 30)
 $leftSlider.Minimum = 1
 $leftSlider.Maximum = 25
 $leftSlider.Value = 10
@@ -279,37 +300,36 @@ $form.Controls.Add($leftSlider)
 
 # Right Click Row
 $rightLabel = New-Object System.Windows.Forms.Label
-$rightLabel.Location = New-Object System.Drawing.Point(20, 115)
+$rightLabel.Location = New-Object System.Drawing.Point(20, 123)
 $rightLabel.Size = New-Object System.Drawing.Size(65, 20)
 $rightLabel.Text = "Right click"
 $rightLabel.ForeColor = [System.Drawing.Color]::FromArgb(130, 130, 130)
-$rightLabel.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+$rightLabel.Font = New-Object System.Drawing.Font("Arial", 9)
 $form.Controls.Add($rightLabel)
 
 $rightKeyLabel = New-Object System.Windows.Forms.Label
-$rightKeyLabel.Location = New-Object System.Drawing.Point(100, 113)
-$rightKeyLabel.Size = New-Object System.Drawing.Size(80, 24)
+$rightKeyLabel.Location = New-Object System.Drawing.Point(100, 120)
+$rightKeyLabel.Size = New-Object System.Drawing.Size(80, 26)
 $rightKeyLabel.Text = "none"
 $rightKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(100, 100, 100)
-$rightKeyLabel.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+$rightKeyLabel.Font = New-Object System.Drawing.Font("Arial", 10)
 $rightKeyLabel.Cursor = [System.Windows.Forms.Cursors]::Hand
-$rightKeyLabel.BorderStyle = "FixedSingle"
-$rightKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(22, 22, 22)
+$rightKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(15, 15, 15)
 $rightKeyLabel.TextAlign = "MiddleCenter"
 $form.Controls.Add($rightKeyLabel)
 
 $rightCpsLabel = New-Object System.Windows.Forms.Label
-$rightCpsLabel.Location = New-Object System.Drawing.Point(270, 115)
-$rightCpsLabel.Size = New-Object System.Drawing.Size(40, 20)
+$rightCpsLabel.Location = New-Object System.Drawing.Point(280, 123)
+$rightCpsLabel.Size = New-Object System.Drawing.Size(35, 20)
 $rightCpsLabel.Text = "10"
 $rightCpsLabel.ForeColor = [System.Drawing.Color]::White
-$rightCpsLabel.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+$rightCpsLabel.Font = New-Object System.Drawing.Font("Arial", 11, [System.Drawing.FontStyle]::Bold)
 $rightCpsLabel.TextAlign = "MiddleRight"
 $form.Controls.Add($rightCpsLabel)
 
 $rightSlider = New-Object System.Windows.Forms.TrackBar
-$rightSlider.Location = New-Object System.Drawing.Point(20, 140)
-$rightSlider.Size = New-Object System.Drawing.Size(290, 30)
+$rightSlider.Location = New-Object System.Drawing.Point(20, 148)
+$rightSlider.Size = New-Object System.Drawing.Size(295, 30)
 $rightSlider.Minimum = 1
 $rightSlider.Maximum = 25
 $rightSlider.Value = 10
@@ -319,40 +339,42 @@ $form.Controls.Add($rightSlider)
 
 # Stealth Mode Toggle Button
 $stealthBtn = New-Object System.Windows.Forms.Button
-$stealthBtn.Location = New-Object System.Drawing.Point(20, 175)
-$stealthBtn.Size = New-Object System.Drawing.Size(290, 26)
-$stealthBtn.Text = "🔒 Stealth Mode: ON"
-$stealthBtn.BackColor = [System.Drawing.Color]::FromArgb(20, 60, 20)
-$stealthBtn.ForeColor = [System.Drawing.Color]::FromArgb(100, 255, 100)
+$stealthBtn.Location = New-Object System.Drawing.Point(20, 188)
+$stealthBtn.Size = New-Object System.Drawing.Size(295, 28)
+$stealthBtn.Text = "Stealth Mode: OFF"
+$stealthBtn.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 20)
+$stealthBtn.ForeColor = [System.Drawing.Color]::FromArgb(255, 200, 100)
 $stealthBtn.FlatStyle = "Flat"
 $stealthBtn.FlatAppearance.BorderSize = 0
-$stealthBtn.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+$stealthBtn.Font = New-Object System.Drawing.Font("Arial", 9, [System.Drawing.FontStyle]::Bold)
 $stealthBtn.Cursor = [System.Windows.Forms.Cursors]::Hand
 $form.Controls.Add($stealthBtn)
 
 # Self Destruct Button
 $selfDestructBtn = New-Object System.Windows.Forms.Button
-$selfDestructBtn.Location = New-Object System.Drawing.Point(20, 206)
-$selfDestructBtn.Size = New-Object System.Drawing.Size(290, 26)
+$selfDestructBtn.Location = New-Object System.Drawing.Point(20, 222)
+$selfDestructBtn.Size = New-Object System.Drawing.Size(295, 28)
 $selfDestructBtn.Text = "SELF DESTRUCT"
 $selfDestructBtn.BackColor = [System.Drawing.Color]::FromArgb(100, 20, 20)
 $selfDestructBtn.ForeColor = [System.Drawing.Color]::FromArgb(255, 100, 100)
 $selfDestructBtn.FlatStyle = "Flat"
 $selfDestructBtn.FlatAppearance.BorderSize = 0
-$selfDestructBtn.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+$selfDestructBtn.Font = New-Object System.Drawing.Font("Arial", 9, [System.Drawing.FontStyle]::Bold)
 $selfDestructBtn.Cursor = [System.Windows.Forms.Cursors]::Hand
 $form.Controls.Add($selfDestructBtn)
 
 # Event Handlers
 $leftKeyLabel.Add_Click({
     $leftKeyLabel.Text = "..."
-    $leftKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(200, 50, 50)
+    $leftKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(220, 50, 50)
+    $leftKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(40, 15, 15)
     $script:leftListeningMode = $true
 })
 
 $rightKeyLabel.Add_Click({
     $rightKeyLabel.Text = "..."
-    $rightKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(200, 50, 50)
+    $rightKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(220, 50, 50)
+    $rightKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(40, 15, 15)
     $script:rightListeningMode = $true
 })
 
@@ -368,58 +390,71 @@ $rightSlider.Add_ValueChanged({
     $script:rightClickTimer.Interval = [Math]::Max(1, [int]$interval)
 })
 
+$discordBtn.Add_Click({
+    Start-Process "https://discord.gg/zP43MEEc3A"
+})
+
 $closeBtn.Add_Click({
     $form.Close()
 })
 
 $closeBtn.Add_MouseEnter({
-    $closeBtn.ForeColor = [System.Drawing.Color]::FromArgb(200, 50, 50)
+    $closeBtn.ForeColor = [System.Drawing.Color]::FromArgb(220, 50, 50)
 })
 
 $closeBtn.Add_MouseLeave({
-    $closeBtn.ForeColor = [System.Drawing.Color]::FromArgb(150, 150, 150)
+    $closeBtn.ForeColor = [System.Drawing.Color]::White
 })
 
 $stealthBtn.Add_Click({
     $script:stealthMode = -not $script:stealthMode
     
     if ($script:stealthMode) {
-        $stealthBtn.Text = "🔒 Stealth Mode: ON"
+        $stealthBtn.Text = "Stealth Mode: ON"
         $stealthBtn.BackColor = [System.Drawing.Color]::FromArgb(20, 60, 20)
         $stealthBtn.ForeColor = [System.Drawing.Color]::FromArgb(100, 255, 100)
         
         try {
             $hwnd = $form.Handle
+            
+            # Ocultar de Alt+Tab
             $currentStyle = [NativeMethods]::GetWindowLong($hwnd, [NativeMethods]::GWL_EXSTYLE)
-            $newStyle = $currentStyle -bor [NativeMethods]::WS_EX_TOOLWINDOW
+            $newStyle = $currentStyle -bor [NativeMethods]::WS_EX_TOOLWINDOW -bor [NativeMethods]::WS_EX_NOACTIVATE
             [NativeMethods]::SetWindowLong($hwnd, [NativeMethods]::GWL_EXSTYLE, $newStyle) | Out-Null
             
+            # Múltiples métodos para ocultar de capturas
             try {
                 $value = 1
                 [NativeMethods]::DwmSetWindowAttribute($hwnd, [NativeMethods]::DWMWA_EXCLUDED_FROM_PEEK, [ref]$value, 4) | Out-Null
+                [NativeMethods]::DwmSetWindowAttribute($hwnd, [NativeMethods]::DWMWA_CLOAK, [ref]$value, 4) | Out-Null
             } catch {}
             
             $form.ShowInTaskbar = $false
+            $form.TopMost = $true
             $form.Hide()
             $form.Show()
         } catch {}
     } else {
-        $stealthBtn.Text = "👁️ Stealth Mode: OFF"
+        $stealthBtn.Text = "Stealth Mode: OFF"
         $stealthBtn.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 20)
-        $stealthBtn.ForeColor = [System.Drawing.Color]::FromArgb(255, 255, 100)
+        $stealthBtn.ForeColor = [System.Drawing.Color]::FromArgb(255, 200, 100)
         
         try {
             $hwnd = $form.Handle
+            
+            # Mostrar en Alt+Tab
             $currentStyle = [NativeMethods]::GetWindowLong($hwnd, [NativeMethods]::GWL_EXSTYLE)
-            $newStyle = $currentStyle -band (-bnot [NativeMethods]::WS_EX_TOOLWINDOW)
+            $newStyle = $currentStyle -band (-bnot [NativeMethods]::WS_EX_TOOLWINDOW) -band (-bnot [NativeMethods]::WS_EX_NOACTIVATE)
             [NativeMethods]::SetWindowLong($hwnd, [NativeMethods]::GWL_EXSTYLE, $newStyle) | Out-Null
             
             try {
                 $value = 0
                 [NativeMethods]::DwmSetWindowAttribute($hwnd, [NativeMethods]::DWMWA_EXCLUDED_FROM_PEEK, [ref]$value, 4) | Out-Null
+                [NativeMethods]::DwmSetWindowAttribute($hwnd, [NativeMethods]::DWMWA_CLOAK, [ref]$value, 4) | Out-Null
             } catch {}
             
             $form.ShowInTaskbar = $true
+            $form.TopMost = $false
             $form.Hide()
             $form.Show()
         } catch {}
@@ -470,29 +505,6 @@ $script:rightClickTimer.Interval = 100
 $script:keyMonitorTimer.Interval = 10
 $script:keyMonitorTimer.Add_Tick({ Update-KeyStates })
 $script:keyMonitorTimer.Start()
-
-# Aplicar stealth mode al iniciar
-$form.Add_Shown({
-    $form.Activate()
-    
-    if ($script:stealthMode) {
-        Start-Sleep -Milliseconds 200
-        
-        try {
-            $hwnd = $form.Handle
-            $currentStyle = [NativeMethods]::GetWindowLong($hwnd, [NativeMethods]::GWL_EXSTYLE)
-            $newStyle = $currentStyle -bor [NativeMethods]::WS_EX_TOOLWINDOW
-            [NativeMethods]::SetWindowLong($hwnd, [NativeMethods]::GWL_EXSTYLE, $newStyle) | Out-Null
-            
-            try {
-                $value = 1
-                [NativeMethods]::DwmSetWindowAttribute($hwnd, [NativeMethods]::DWMWA_EXCLUDED_FROM_PEEK, [ref]$value, 4) | Out-Null
-            } catch {}
-            
-            $form.ShowInTaskbar = $false
-        } catch {}
-    }
-})
 
 $form.Add_FormClosing({
     $script:leftClickTimer.Stop()
