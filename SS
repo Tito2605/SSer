@@ -1,20 +1,13 @@
-# Forzar modo STA (Single-Thread Apartment) requerido para WinForms
+# Forzar modo STA
 if ($host.Runspace.ApartmentState -ne "STA") {
-    Write-Host "Reiniciando en modo STA..." -ForegroundColor Yellow
     powershell -STA -ExecutionPolicy Bypass -File $PSCommandPath
     exit
 }
 
-try {
-    Add-Type -AssemblyName System.Windows.Forms
-    Add-Type -AssemblyName System.Drawing
-} catch {
-    Write-Host "Error cargando librerías: $_" -ForegroundColor Red
-    Read-Host "Presiona Enter para salir"
-    exit
-}
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
 
-# Importar funciones de Windows API
+# API de Windows
 try {
     Add-Type @"
 using System;
@@ -47,559 +40,390 @@ public class NativeMethods {
     public const int DWMWA_CLOAK = 13;
 }
 "@
-} catch {
-    # Tipo ya existe, continuar
-}
+} catch {}
 
-# Variables globales
-$script:leftClickTimer = New-Object System.Windows.Forms.Timer
-$script:rightClickTimer = New-Object System.Windows.Forms.Timer
-$script:keyMonitorTimer = New-Object System.Windows.Forms.Timer
-$script:leftHotkey = 0x00
-$script:rightHotkey = 0x00
-$script:leftEnabled = $false
-$script:rightEnabled = $false
-$script:leftPreviousState = $false
-$script:rightPreviousState = $false
-$script:leftListeningMode = $false
-$script:rightListeningMode = $false
+# Variables
+$script:leftTimer = New-Object System.Windows.Forms.Timer
+$script:rightTimer = New-Object System.Windows.Forms.Timer
+$script:monitorTimer = New-Object System.Windows.Forms.Timer
+$script:leftKey = 0
+$script:rightKey = 0
+$script:leftActive = $false
+$script:rightActive = $false
+$script:leftWasPressed = $false
+$script:rightWasPressed = $false
+$script:leftListening = $false
+$script:rightListening = $false
 $script:stealthMode = $false
 
-# Función para obtener el nombre de la tecla
 function Get-KeyName {
-    param([int]$keyCode)
-    
-    $keyNames = @{
-        0x01 = "LMB"
-        0x02 = "RMB"
-        0x04 = "MMB"
-        0x05 = "MB4"
-        0x06 = "MB5"
-        0x20 = "Space"
-        0x10 = "Shift"
-        0x11 = "Ctrl"
-        0x12 = "Alt"
-        0x41 = "A"; 0x42 = "B"; 0x43 = "C"; 0x44 = "D"; 0x45 = "E"
-        0x46 = "F"; 0x47 = "G"; 0x48 = "H"; 0x49 = "I"; 0x4A = "J"
-        0x4B = "K"; 0x4C = "L"; 0x4D = "M"; 0x4E = "N"; 0x4F = "O"
-        0x50 = "P"; 0x51 = "Q"; 0x52 = "R"; 0x53 = "S"; 0x54 = "T"
-        0x55 = "U"; 0x56 = "V"; 0x57 = "W"; 0x58 = "X"; 0x59 = "Y"
-        0x5A = "Z"
-        0x70 = "F1"; 0x71 = "F2"; 0x72 = "F3"; 0x73 = "F4"
-        0x74 = "F5"; 0x75 = "F6"; 0x76 = "F7"; 0x77 = "F8"
+    param([int]$code)
+    $names = @{
+        0x01="LMB";0x02="RMB";0x04="MMB";0x05="MB4";0x06="MB5"
+        0x20="Space";0x10="Shift";0x11="Ctrl";0x12="Alt"
+        0x41="A";0x42="B";0x43="C";0x44="D";0x45="E";0x46="F";0x47="G"
+        0x48="H";0x49="I";0x4A="J";0x4B="K";0x4C="L";0x4D="M";0x4E="N"
+        0x4F="O";0x50="P";0x51="Q";0x52="R";0x53="S";0x54="T";0x55="U"
+        0x56="V";0x57="W";0x58="X";0x59="Y";0x5A="Z"
+        0x70="F1";0x71="F2";0x72="F3";0x73="F4";0x74="F5";0x75="F6"
     }
-    
-    if ($keyNames.ContainsKey($keyCode)) {
-        return $keyNames[$keyCode]
-    }
+    if($names.ContainsKey($code)){return $names[$code]}
     return "Key"
 }
 
-# Función para capturar tecla presionada
 function Get-PressedKey {
-    param([int]$excludeKey = 0)
-    
-    for ($i = 0x01; $i -le 0xFE; $i++) {
-        # Excluir la tecla especificada
-        if ($i -eq $excludeKey) { continue }
-        
-        $state = [NativeMethods]::GetAsyncKeyState($i)
-        if (($state -band 0x8000) -ne 0) {
-            return $i
-        }
+    for($i=1;$i -le 254;$i++){
+        if(([NativeMethods]::GetAsyncKeyState($i) -band 0x8000) -ne 0){return $i}
     }
     return 0
 }
 
-# Funciones de click
-function Invoke-LeftClick {
-    [NativeMethods]::mouse_event([NativeMethods]::MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-    [NativeMethods]::mouse_event([NativeMethods]::MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+function Do-LeftClick {
+    [NativeMethods]::mouse_event(2,0,0,0,0)
+    [NativeMethods]::mouse_event(4,0,0,0,0)
 }
 
-function Invoke-RightClick {
-    [NativeMethods]::mouse_event([NativeMethods]::MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0)
-    [NativeMethods]::mouse_event([NativeMethods]::MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0)
+function Do-RightClick {
+    [NativeMethods]::mouse_event(8,0,0,0,0)
+    [NativeMethods]::mouse_event(16,0,0,0,0)
 }
 
-# Monitor de teclas
-function Update-KeyStates {
-    # Monitor click izquierdo
-    if ($script:leftEnabled -and $script:leftHotkey -ne 0x00) {
-        $keyState = [NativeMethods]::GetAsyncKeyState($script:leftHotkey)
-        $isPressed = ($keyState -band 0x8000) -ne 0
-        
-        if ($isPressed -and -not $script:leftPreviousState) {
-            $script:leftClickTimer.Start()
-        } elseif (-not $isPressed -and $script:leftPreviousState) {
-            $script:leftClickTimer.Stop()
+function Update-Monitor {
+    # Left
+    if($script:leftActive -and $script:leftKey -ne 0){
+        $pressed = ([NativeMethods]::GetAsyncKeyState($script:leftKey) -band 0x8000) -ne 0
+        if($pressed -and -not $script:leftWasPressed){
+            $script:leftTimer.Start()
         }
-        
-        $script:leftPreviousState = $isPressed
+        elseif(-not $pressed -and $script:leftWasPressed){
+            $script:leftTimer.Stop()
+        }
+        $script:leftWasPressed = $pressed
     }
     
-    # Monitor click derecho
-    if ($script:rightEnabled -and $script:rightHotkey -ne 0x00) {
-        $keyState = [NativeMethods]::GetAsyncKeyState($script:rightHotkey)
-        $isPressed = ($keyState -band 0x8000) -ne 0
-        
-        if ($isPressed -and -not $script:rightPreviousState) {
-            $script:rightClickTimer.Start()
-        } elseif (-not $isPressed -and $script:rightPreviousState) {
-            $script:rightClickTimer.Stop()
+    # Right
+    if($script:rightActive -and $script:rightKey -ne 0){
+        $pressed = ([NativeMethods]::GetAsyncKeyState($script:rightKey) -band 0x8000) -ne 0
+        if($pressed -and -not $script:rightWasPressed){
+            $script:rightTimer.Start()
         }
-        
-        $script:rightPreviousState = $isPressed
+        elseif(-not $pressed -and $script:rightWasPressed){
+            $script:rightTimer.Stop()
+        }
+        $script:rightWasPressed = $pressed
     }
     
-    # Modo escucha para tecla izquierda
-    if ($script:leftListeningMode) {
-        $pressedKey = Get-PressedKey
-        if ($pressedKey -ne 0) {
-            # ESC para desvincular
-            if ($pressedKey -eq 0x1B) {
-                $script:leftHotkey = 0x00
-                $leftKeyLabel.Text = "none"
-                $leftKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(120, 120, 120)
-                $leftKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(15, 15, 15)
-                $script:leftListeningMode = $false
-                $script:leftEnabled = $false
-                $script:leftClickTimer.Stop()
+    # Listen Left
+    if($script:leftListening){
+        $key = Get-PressedKey
+        if($key -ne 0){
+            if($key -eq 0x1B){
+                $script:leftKey = 0
+                $leftKeyBox.Text = "none"
+                $leftKeyBox.ForeColor = [System.Drawing.Color]::Gray
+                $script:leftActive = $false
             } else {
-                $script:leftHotkey = $pressedKey
-                $keyName = Get-KeyName $pressedKey
-                $leftKeyLabel.Text = $keyName
-                $leftKeyLabel.ForeColor = [System.Drawing.Color]::White
-                $leftKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(15, 15, 15)
-                $script:leftListeningMode = $false
-                $script:leftEnabled = $true
+                $script:leftKey = $key
+                $leftKeyBox.Text = Get-KeyName $key
+                $leftKeyBox.ForeColor = [System.Drawing.Color]::White
+                $script:leftActive = $true
             }
+            $leftKeyBox.BackColor = [System.Drawing.Color]::FromArgb(15,15,15)
+            $script:leftListening = $false
             Start-Sleep -Milliseconds 200
         }
     }
     
-    # Modo escucha para tecla derecha
-    if ($script:rightListeningMode) {
-        $pressedKey = Get-PressedKey
-        if ($pressedKey -ne 0) {
-            # ESC para desvincular
-            if ($pressedKey -eq 0x1B) {
-                $script:rightHotkey = 0x00
-                $rightKeyLabel.Text = "none"
-                $rightKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(120, 120, 120)
-                $rightKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(15, 15, 15)
-                $script:rightListeningMode = $false
-                $script:rightEnabled = $false
-                $script:rightClickTimer.Stop()
+    # Listen Right
+    if($script:rightListening){
+        $key = Get-PressedKey
+        if($key -ne 0){
+            if($key -eq 0x1B){
+                $script:rightKey = 0
+                $rightKeyBox.Text = "none"
+                $rightKeyBox.ForeColor = [System.Drawing.Color]::Gray
+                $script:rightActive = $false
             } else {
-                $script:rightHotkey = $pressedKey
-                $keyName = Get-KeyName $pressedKey
-                $rightKeyLabel.Text = $keyName
-                $rightKeyLabel.ForeColor = [System.Drawing.Color]::White
-                $rightKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(15, 15, 15)
-                $script:rightListeningMode = $false
-                $script:rightEnabled = $true
+                $script:rightKey = $key
+                $rightKeyBox.Text = Get-KeyName $key
+                $rightKeyBox.ForeColor = [System.Drawing.Color]::White
+                $script:rightActive = $true
             }
+            $rightKeyBox.BackColor = [System.Drawing.Color]::FromArgb(15,15,15)
+            $script:rightListening = $false
             Start-Sleep -Milliseconds 200
         }
     }
 }
 
-# Crear formulario
+# Form
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "Icon1cClicker"
-$form.Size = New-Object System.Drawing.Size(340, 270)
+$form.Text = "Icon1CClicker"
+$form.Size = New-Object System.Drawing.Size(340,260)
 $form.StartPosition = "CenterScreen"
 $form.FormBorderStyle = "None"
-$form.BackColor = [System.Drawing.Color]::FromArgb(15, 15, 15)
-$form.Font = New-Object System.Drawing.Font("Arial", 9)
-$form.TopMost = $false
+$form.BackColor = [System.Drawing.Color]::FromArgb(15,15,15)
 $form.ShowInTaskbar = $true
 
-# Hacer el formulario arrastrable
-$script:dragging = $false
-$script:dragCursor = [System.Drawing.Point]::Empty
-$script:dragForm = [System.Drawing.Point]::Empty
-
+# Dragging
+$script:drag = $false
 $form.Add_MouseDown({
-    if ($_.Button -eq [System.Windows.Forms.MouseButtons]::Left -and $_.Y -lt 40) {
-        $script:dragging = $true
-        $script:dragCursor = [System.Windows.Forms.Cursor]::Position
-        $script:dragForm = $form.Location
+    if($_.Y -lt 40){
+        $script:drag = $true
+        $script:dragStart = $_.Location
     }
 })
-
 $form.Add_MouseMove({
-    if ($script:dragging) {
-        $diff = [System.Drawing.Point]::new(
-            [System.Windows.Forms.Cursor]::Position.X - $script:dragCursor.X,
-            [System.Windows.Forms.Cursor]::Position.Y - $script:dragCursor.Y
-        )
-        $form.Location = [System.Drawing.Point]::new(
-            $script:dragForm.X + $diff.X,
-            $script:dragForm.Y + $diff.Y
-        )
+    if($script:drag){
+        $pos = $form.PointToScreen($_.Location)
+        $form.Location = New-Object System.Drawing.Point($pos.X - $script:dragStart.X, $pos.Y - $script:dragStart.Y)
     }
 })
+$form.Add_MouseUp({$script:drag = $false})
 
-$form.Add_MouseUp({
-    if ($_.Button -eq [System.Windows.Forms.MouseButtons]::Left) {
-        $script:dragging = $false
-    }
+# Title
+$title = New-Object System.Windows.Forms.Label
+$title.Location = New-Object System.Drawing.Point(15,12)
+$title.Size = New-Object System.Drawing.Size(200,26)
+$title.Text = "Icon1CClicker"
+$title.Font = New-Object System.Drawing.Font("Consolas",16,[System.Drawing.FontStyle]::Bold)
+$title.ForeColor = [System.Drawing.Color]::White
+$form.Controls.Add($title)
+
+# Discord SVG simplificado
+$discord = New-Object System.Windows.Forms.Label
+$discord.Location = New-Object System.Drawing.Point(265,10)
+$discord.Size = New-Object System.Drawing.Size(28,28)
+$discord.Text = "◆"
+$discord.Font = New-Object System.Drawing.Font("Wingdings",18)
+$discord.ForeColor = [System.Drawing.Color]::FromArgb(88,101,242)
+$discord.TextAlign = "MiddleCenter"
+$discord.Cursor = "Hand"
+$discord.Add_Click({Start-Process "https://discord.gg/zP43MEEc3A"})
+$form.Controls.Add($discord)
+
+# Close
+$close = New-Object System.Windows.Forms.Label
+$close.Location = New-Object System.Drawing.Point(298,8)
+$close.Size = New-Object System.Drawing.Size(32,32)
+$close.Text = "×"
+$close.Font = New-Object System.Drawing.Font("Arial",22,[System.Drawing.FontStyle]::Bold)
+$close.ForeColor = [System.Drawing.Color]::White
+$close.TextAlign = "MiddleCenter"
+$close.Cursor = "Hand"
+$close.Add_Click({$form.Close()})
+$close.Add_MouseEnter({$close.ForeColor=[System.Drawing.Color]::FromArgb(220,50,50)})
+$close.Add_MouseLeave({$close.ForeColor=[System.Drawing.Color]::White})
+$form.Controls.Add($close)
+
+# Left label
+$leftLbl = New-Object System.Windows.Forms.Label
+$leftLbl.Location = New-Object System.Drawing.Point(20,56)
+$leftLbl.Size = New-Object System.Drawing.Size(65,20)
+$leftLbl.Text = "Left click"
+$leftLbl.ForeColor = [System.Drawing.Color]::FromArgb(130,130,130)
+$leftLbl.Font = New-Object System.Drawing.Font("Segoe UI",9)
+$form.Controls.Add($leftLbl)
+
+# Left key
+$leftKeyBox = New-Object System.Windows.Forms.Label
+$leftKeyBox.Location = New-Object System.Drawing.Point(95,53)
+$leftKeyBox.Size = New-Object System.Drawing.Size(90,26)
+$leftKeyBox.Text = "none"
+$leftKeyBox.ForeColor = [System.Drawing.Color]::Gray
+$leftKeyBox.BackColor = [System.Drawing.Color]::FromArgb(15,15,15)
+$leftKeyBox.Font = New-Object System.Drawing.Font("Consolas",11,[System.Drawing.FontStyle]::Bold)
+$leftKeyBox.TextAlign = "MiddleCenter"
+$leftKeyBox.Cursor = "Hand"
+$leftKeyBox.Add_Click({
+    $leftKeyBox.Text = "..."
+    $leftKeyBox.ForeColor = [System.Drawing.Color]::FromArgb(255,120,120)
+    $leftKeyBox.BackColor = [System.Drawing.Color]::FromArgb(30,15,15)
+    $script:leftListening = $true
 })
+$form.Controls.Add($leftKeyBox)
 
-# Título
-$titleLabel = New-Object System.Windows.Forms.Label
-$titleLabel.Location = New-Object System.Drawing.Point(15, 12)
-$titleLabel.Size = New-Object System.Drawing.Size(250, 28)
-$titleLabel.Text = "Icon1cClicker"
-$titleLabel.Font = New-Object System.Drawing.Font("Impact", 16, [System.Drawing.FontStyle]::Regular)
-$titleLabel.ForeColor = [System.Drawing.Color]::White
-$form.Controls.Add($titleLabel)
+# Left CPS
+$leftCps = New-Object System.Windows.Forms.Label
+$leftCps.Location = New-Object System.Drawing.Point(285,56)
+$leftCps.Size = New-Object System.Drawing.Size(30,20)
+$leftCps.Text = "10"
+$leftCps.ForeColor = [System.Drawing.Color]::White
+$leftCps.Font = New-Object System.Drawing.Font("Consolas",11,[System.Drawing.FontStyle]::Bold)
+$leftCps.TextAlign = "MiddleRight"
+$form.Controls.Add($leftCps)
 
-# Botón Discord con logo SVG
-$discordBtn = New-Object System.Windows.Forms.PictureBox
-$discordBtn.Location = New-Object System.Drawing.Point(265, 10)
-$discordBtn.Size = New-Object System.Drawing.Size(28, 28)
-$discordBtn.Cursor = [System.Windows.Forms.Cursors]::Hand
-$discordBtn.BackColor = [System.Drawing.Color]::Transparent
+# Left slider background
+$leftBg = New-Object System.Windows.Forms.Panel
+$leftBg.Location = New-Object System.Drawing.Point(20,88)
+$leftBg.Size = New-Object System.Drawing.Size(295,3)
+$leftBg.BackColor = [System.Drawing.Color]::FromArgb(40,40,40)
+$form.Controls.Add($leftBg)
 
-# Crear imagen del logo de Discord
-$discordBitmap = New-Object System.Drawing.Bitmap(28, 28)
-$graphics = [System.Drawing.Graphics]::FromImage($discordBitmap)
-$graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+# Left slider fill
+$leftFill = New-Object System.Windows.Forms.Panel
+$leftFill.Location = New-Object System.Drawing.Point(20,88)
+$leftFill.Size = New-Object System.Drawing.Size(118,3)
+$leftFill.BackColor = [System.Drawing.Color]::FromArgb(88,101,242)
+$form.Controls.Add($leftFill)
 
-# Color Discord
-$discordColor = [System.Drawing.Color]::FromArgb(88, 101, 242)
-$brush = New-Object System.Drawing.SolidBrush($discordColor)
-
-# Dibujar forma simplificada del logo Discord (cabeza con ojos)
-$path = New-Object System.Drawing.Drawing2D.GraphicsPath
-
-# Cabeza (rectángulo redondeado superior)
-$path.AddArc(4, 4, 6, 6, 180, 90)
-$path.AddLine(7, 4, 21, 4)
-$path.AddArc(18, 4, 6, 6, 270, 90)
-$path.AddLine(24, 7, 24, 18)
-$path.AddArc(18, 18, 6, 6, 0, 90)
-$path.AddLine(21, 24, 7, 24)
-$path.AddArc(4, 18, 6, 6, 90, 90)
-$path.CloseFigure()
-
-$graphics.FillPath($brush, $path)
-
-# Ojos
-$eyeBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(15, 15, 15))
-$graphics.FillEllipse($eyeBrush, 8, 11, 4, 5)
-$graphics.FillEllipse($eyeBrush, 16, 11, 4, 5)
-
-$graphics.Dispose()
-$brush.Dispose()
-$eyeBrush.Dispose()
-
-$discordBtn.Image = $discordBitmap
-$form.Controls.Add($discordBtn)
-
-# Botón cerrar
-$closeBtn = New-Object System.Windows.Forms.Label
-$closeBtn.Location = New-Object System.Drawing.Point(298, 8)
-$closeBtn.Size = New-Object System.Drawing.Size(32, 32)
-$closeBtn.Text = "×"
-$closeBtn.ForeColor = [System.Drawing.Color]::White
-$closeBtn.Font = New-Object System.Drawing.Font("Arial", 20, [System.Drawing.FontStyle]::Bold)
-$closeBtn.TextAlign = "MiddleCenter"
-$closeBtn.Cursor = [System.Windows.Forms.Cursors]::Hand
-$form.Controls.Add($closeBtn)
-
-# Left Click Row
-$leftLabel = New-Object System.Windows.Forms.Label
-$leftLabel.Location = New-Object System.Drawing.Point(20, 58)
-$leftLabel.Size = New-Object System.Drawing.Size(65, 20)
-$leftLabel.Text = "Left click"
-$leftLabel.ForeColor = [System.Drawing.Color]::FromArgb(130, 130, 130)
-$leftLabel.Font = New-Object System.Drawing.Font("Arial", 9)
-$form.Controls.Add($leftLabel)
-
-$leftKeyLabel = New-Object System.Windows.Forms.Label
-$leftKeyLabel.Location = New-Object System.Drawing.Point(95, 55)
-$leftKeyLabel.Size = New-Object System.Drawing.Size(90, 28)
-$leftKeyLabel.Text = "none"
-$leftKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(120, 120, 120)
-$leftKeyLabel.Font = New-Object System.Drawing.Font("Consolas", 11, [System.Drawing.FontStyle]::Bold)
-$leftKeyLabel.Cursor = [System.Windows.Forms.Cursors]::Hand
-$leftKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(15, 15, 15)
-$leftKeyLabel.TextAlign = "MiddleCenter"
-$form.Controls.Add($leftKeyLabel)
-
-$leftCpsLabel = New-Object System.Windows.Forms.Label
-$leftCpsLabel.Location = New-Object System.Drawing.Point(280, 58)
-$leftCpsLabel.Size = New-Object System.Drawing.Size(35, 20)
-$leftCpsLabel.Text = "10"
-$leftCpsLabel.ForeColor = [System.Drawing.Color]::White
-$leftCpsLabel.Font = New-Object System.Drawing.Font("Arial", 11, [System.Drawing.FontStyle]::Bold)
-$leftCpsLabel.TextAlign = "MiddleRight"
-$form.Controls.Add($leftCpsLabel)
-
-# Left CPS Slider personalizado
-$leftSliderBg = New-Object System.Windows.Forms.Panel
-$leftSliderBg.Location = New-Object System.Drawing.Point(20, 90)
-$leftSliderBg.Size = New-Object System.Drawing.Size(295, 4)
-$leftSliderBg.BackColor = [System.Drawing.Color]::FromArgb(50, 50, 50)
-$form.Controls.Add($leftSliderBg)
-
-$leftSliderFill = New-Object System.Windows.Forms.Panel
-$leftSliderFill.Location = New-Object System.Drawing.Point(20, 90)
-$leftSliderFill.Size = New-Object System.Drawing.Size(118, 4)
-$leftSliderFill.BackColor = [System.Drawing.Color]::FromArgb(88, 101, 242)
-$form.Controls.Add($leftSliderFill)
-
-$leftSlider = New-Object System.Windows.Forms.TrackBar
-$leftSlider.Location = New-Object System.Drawing.Point(20, 83)
-$leftSlider.Size = New-Object System.Drawing.Size(295, 30)
-$leftSlider.Minimum = 1
-$leftSlider.Maximum = 25
-$leftSlider.Value = 10
-$leftSlider.TickStyle = "None"
-$leftSlider.BackColor = [System.Drawing.Color]::FromArgb(15, 15, 15)
-$form.Controls.Add($leftSlider)
-
-# Right Click Row
-$rightLabel = New-Object System.Windows.Forms.Label
-$rightLabel.Location = New-Object System.Drawing.Point(20, 123)
-$rightLabel.Size = New-Object System.Drawing.Size(65, 20)
-$rightLabel.Text = "Right click"
-$rightLabel.ForeColor = [System.Drawing.Color]::FromArgb(130, 130, 130)
-$rightLabel.Font = New-Object System.Drawing.Font("Arial", 9)
-$form.Controls.Add($rightLabel)
-
-$rightKeyLabel = New-Object System.Windows.Forms.Label
-$rightKeyLabel.Location = New-Object System.Drawing.Point(95, 120)
-$rightKeyLabel.Size = New-Object System.Drawing.Size(90, 28)
-$rightKeyLabel.Text = "none"
-$rightKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(120, 120, 120)
-$rightKeyLabel.Font = New-Object System.Drawing.Font("Consolas", 11, [System.Drawing.FontStyle]::Bold)
-$rightKeyLabel.Cursor = [System.Windows.Forms.Cursors]::Hand
-$rightKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(15, 15, 15)
-$rightKeyLabel.TextAlign = "MiddleCenter"
-$form.Controls.Add($rightKeyLabel)
-
-$rightCpsLabel = New-Object System.Windows.Forms.Label
-$rightCpsLabel.Location = New-Object System.Drawing.Point(280, 123)
-$rightCpsLabel.Size = New-Object System.Drawing.Size(35, 20)
-$rightCpsLabel.Text = "10"
-$rightCpsLabel.ForeColor = [System.Drawing.Color]::White
-$rightCpsLabel.Font = New-Object System.Drawing.Font("Arial", 11, [System.Drawing.FontStyle]::Bold)
-$rightCpsLabel.TextAlign = "MiddleRight"
-$form.Controls.Add($rightCpsLabel)
-
-# Right CPS Slider personalizado
-$rightSliderBg = New-Object System.Windows.Forms.Panel
-$rightSliderBg.Location = New-Object System.Drawing.Point(20, 155)
-$rightSliderBg.Size = New-Object System.Drawing.Size(295, 4)
-$rightSliderBg.BackColor = [System.Drawing.Color]::FromArgb(50, 50, 50)
-$form.Controls.Add($rightSliderBg)
-
-$rightSliderFill = New-Object System.Windows.Forms.Panel
-$rightSliderFill.Location = New-Object System.Drawing.Point(20, 155)
-$rightSliderFill.Size = New-Object System.Drawing.Size(118, 4)
-$rightSliderFill.BackColor = [System.Drawing.Color]::FromArgb(88, 101, 242)
-$form.Controls.Add($rightSliderFill)
-
-$rightSlider = New-Object System.Windows.Forms.TrackBar
-$rightSlider.Location = New-Object System.Drawing.Point(20, 148)
-$rightSlider.Size = New-Object System.Drawing.Size(295, 30)
-$rightSlider.Minimum = 1
-$rightSlider.Maximum = 25
-$rightSlider.Value = 10
-$rightSlider.TickStyle = "None"
-$rightSlider.BackColor = [System.Drawing.Color]::FromArgb(15, 15, 15)
-$form.Controls.Add($rightSlider)
-
-# Stealth Mode Toggle Button
-$stealthBtn = New-Object System.Windows.Forms.Button
-$stealthBtn.Location = New-Object System.Drawing.Point(20, 188)
-$stealthBtn.Size = New-Object System.Drawing.Size(295, 28)
-$stealthBtn.Text = "Stealth Mode: OFF"
-$stealthBtn.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 20)
-$stealthBtn.ForeColor = [System.Drawing.Color]::FromArgb(255, 200, 100)
-$stealthBtn.FlatStyle = "Flat"
-$stealthBtn.FlatAppearance.BorderSize = 0
-$stealthBtn.Font = New-Object System.Drawing.Font("Arial", 9, [System.Drawing.FontStyle]::Bold)
-$stealthBtn.Cursor = [System.Windows.Forms.Cursors]::Hand
-$form.Controls.Add($stealthBtn)
-
-# Self Destruct Button
-$selfDestructBtn = New-Object System.Windows.Forms.Button
-$selfDestructBtn.Location = New-Object System.Drawing.Point(20, 222)
-$selfDestructBtn.Size = New-Object System.Drawing.Size(295, 28)
-$selfDestructBtn.Text = "SELF DESTRUCT"
-$selfDestructBtn.BackColor = [System.Drawing.Color]::FromArgb(100, 20, 20)
-$selfDestructBtn.ForeColor = [System.Drawing.Color]::FromArgb(255, 100, 100)
-$selfDestructBtn.FlatStyle = "Flat"
-$selfDestructBtn.FlatAppearance.BorderSize = 0
-$selfDestructBtn.Font = New-Object System.Drawing.Font("Arial", 9, [System.Drawing.FontStyle]::Bold)
-$selfDestructBtn.Cursor = [System.Windows.Forms.Cursors]::Hand
-$form.Controls.Add($selfDestructBtn)
-
-# Event Handlers
-$leftKeyLabel.Add_Click({
-    $leftKeyLabel.Text = "Press key..."
-    $leftKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(255, 120, 120)
-    $leftKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(25, 15, 15)
-    $script:leftListeningMode = $true
+# Left slider
+$leftSlide = New-Object System.Windows.Forms.TrackBar
+$leftSlide.Location = New-Object System.Drawing.Point(15,80)
+$leftSlide.Size = New-Object System.Drawing.Size(305,35)
+$leftSlide.Minimum = 1
+$leftSlide.Maximum = 25
+$leftSlide.Value = 10
+$leftSlide.TickStyle = "None"
+$leftSlide.BackColor = [System.Drawing.Color]::FromArgb(15,15,15)
+$leftSlide.Add_ValueChanged({
+    $leftCps.Text = $leftSlide.Value
+    $script:leftTimer.Interval = [Math]::Max(1,[int](1000.0/$leftSlide.Value))
+    $leftFill.Width = [int](($leftSlide.Value/25.0)*295)
 })
+$form.Controls.Add($leftSlide)
 
-$rightKeyLabel.Add_Click({
-    $rightKeyLabel.Text = "Press key..."
-    $rightKeyLabel.ForeColor = [System.Drawing.Color]::FromArgb(255, 120, 120)
-    $rightKeyLabel.BackColor = [System.Drawing.Color]::FromArgb(25, 15, 15)
-    $script:rightListeningMode = $true
+# Right label
+$rightLbl = New-Object System.Windows.Forms.Label
+$rightLbl.Location = New-Object System.Drawing.Point(20,121)
+$rightLbl.Size = New-Object System.Drawing.Size(65,20)
+$rightLbl.Text = "Right click"
+$rightLbl.ForeColor = [System.Drawing.Color]::FromArgb(130,130,130)
+$rightLbl.Font = New-Object System.Drawing.Font("Segoe UI",9)
+$form.Controls.Add($rightLbl)
+
+# Right key
+$rightKeyBox = New-Object System.Windows.Forms.Label
+$rightKeyBox.Location = New-Object System.Drawing.Point(95,118)
+$rightKeyBox.Size = New-Object System.Drawing.Size(90,26)
+$rightKeyBox.Text = "none"
+$rightKeyBox.ForeColor = [System.Drawing.Color]::Gray
+$rightKeyBox.BackColor = [System.Drawing.Color]::FromArgb(15,15,15)
+$rightKeyBox.Font = New-Object System.Drawing.Font("Consolas",11,[System.Drawing.FontStyle]::Bold)
+$rightKeyBox.TextAlign = "MiddleCenter"
+$rightKeyBox.Cursor = "Hand"
+$rightKeyBox.Add_Click({
+    $rightKeyBox.Text = "..."
+    $rightKeyBox.ForeColor = [System.Drawing.Color]::FromArgb(255,120,120)
+    $rightKeyBox.BackColor = [System.Drawing.Color]::FromArgb(30,15,15)
+    $script:rightListening = $true
 })
+$form.Controls.Add($rightKeyBox)
 
-$leftSlider.Add_ValueChanged({
-    $leftCpsLabel.Text = $leftSlider.Value.ToString()
-    $interval = 1000.0 / [double]$leftSlider.Value
-    $script:leftClickTimer.Interval = [Math]::Max(1, [int]$interval)
-    
-    # Actualizar barra de progreso
-    $fillWidth = ($leftSlider.Value / 25.0) * 295
-    $leftSliderFill.Width = [int]$fillWidth
+# Right CPS
+$rightCps = New-Object System.Windows.Forms.Label
+$rightCps.Location = New-Object System.Drawing.Point(285,121)
+$rightCps.Size = New-Object System.Drawing.Size(30,20)
+$rightCps.Text = "10"
+$rightCps.ForeColor = [System.Drawing.Color]::White
+$rightCps.Font = New-Object System.Drawing.Font("Consolas",11,[System.Drawing.FontStyle]::Bold)
+$rightCps.TextAlign = "MiddleRight"
+$form.Controls.Add($rightCps)
+
+# Right slider background
+$rightBg = New-Object System.Windows.Forms.Panel
+$rightBg.Location = New-Object System.Drawing.Point(20,153)
+$rightBg.Size = New-Object System.Drawing.Size(295,3)
+$rightBg.BackColor = [System.Drawing.Color]::FromArgb(40,40,40)
+$form.Controls.Add($rightBg)
+
+# Right slider fill
+$rightFill = New-Object System.Windows.Forms.Panel
+$rightFill.Location = New-Object System.Drawing.Point(20,153)
+$rightFill.Size = New-Object System.Drawing.Size(118,3)
+$rightFill.BackColor = [System.Drawing.Color]::FromArgb(88,101,242)
+$form.Controls.Add($rightFill)
+
+# Right slider
+$rightSlide = New-Object System.Windows.Forms.TrackBar
+$rightSlide.Location = New-Object System.Drawing.Point(15,145)
+$rightSlide.Size = New-Object System.Drawing.Size(305,35)
+$rightSlide.Minimum = 1
+$rightSlide.Maximum = 25
+$rightSlide.Value = 10
+$rightSlide.TickStyle = "None"
+$rightSlide.BackColor = [System.Drawing.Color]::FromArgb(15,15,15)
+$rightSlide.Add_ValueChanged({
+    $rightCps.Text = $rightSlide.Value
+    $script:rightTimer.Interval = [Math]::Max(1,[int](1000.0/$rightSlide.Value))
+    $rightFill.Width = [int](($rightSlide.Value/25.0)*295)
 })
+$form.Controls.Add($rightSlide)
 
-$rightSlider.Add_ValueChanged({
-    $rightCpsLabel.Text = $rightSlider.Value.ToString()
-    $interval = 1000.0 / [double]$rightSlider.Value
-    $script:rightClickTimer.Interval = [Math]::Max(1, [int]$interval)
-    
-    # Actualizar barra de progreso
-    $fillWidth = ($rightSlider.Value / 25.0) * 295
-    $rightSliderFill.Width = [int]$fillWidth
-})
-
-$discordBtn.Add_Click({
-    Start-Process "https://discord.gg/zP43MEEc3A"
-})
-
-$closeBtn.Add_Click({
-    $form.Close()
-})
-
-$closeBtn.Add_MouseEnter({
-    $closeBtn.ForeColor = [System.Drawing.Color]::FromArgb(220, 50, 50)
-})
-
-$closeBtn.Add_MouseLeave({
-    $closeBtn.ForeColor = [System.Drawing.Color]::White
-})
-
-$stealthBtn.Add_Click({
+# Stealth
+$stealth = New-Object System.Windows.Forms.Button
+$stealth.Location = New-Object System.Drawing.Point(20,185)
+$stealth.Size = New-Object System.Drawing.Size(295,28)
+$stealth.Text = "Stealth Mode: OFF"
+$stealth.BackColor = [System.Drawing.Color]::FromArgb(60,60,20)
+$stealth.ForeColor = [System.Drawing.Color]::FromArgb(255,200,100)
+$stealth.FlatStyle = "Flat"
+$stealth.FlatAppearance.BorderSize = 0
+$stealth.Font = New-Object System.Drawing.Font("Segoe UI",9,[System.Drawing.FontStyle]::Bold)
+$stealth.Cursor = "Hand"
+$stealth.Add_Click({
     $script:stealthMode = -not $script:stealthMode
-    
-    if ($script:stealthMode) {
-        $stealthBtn.Text = "Stealth Mode: ON"
-        $stealthBtn.BackColor = [System.Drawing.Color]::FromArgb(20, 60, 20)
-        $stealthBtn.ForeColor = [System.Drawing.Color]::FromArgb(100, 255, 100)
-        
-        try {
-            $hwnd = $form.Handle
-            
-            # Ocultar de Alt+Tab
-            $currentStyle = [NativeMethods]::GetWindowLong($hwnd, [NativeMethods]::GWL_EXSTYLE)
-            $newStyle = $currentStyle -bor [NativeMethods]::WS_EX_TOOLWINDOW -bor [NativeMethods]::WS_EX_NOACTIVATE
-            [NativeMethods]::SetWindowLong($hwnd, [NativeMethods]::GWL_EXSTYLE, $newStyle) | Out-Null
-            
-            # Múltiples métodos para ocultar de capturas
-            try {
-                $value = 1
-                [NativeMethods]::DwmSetWindowAttribute($hwnd, [NativeMethods]::DWMWA_EXCLUDED_FROM_PEEK, [ref]$value, 4) | Out-Null
-                [NativeMethods]::DwmSetWindowAttribute($hwnd, [NativeMethods]::DWMWA_CLOAK, [ref]$value, 4) | Out-Null
-            } catch {}
-            
-            $form.ShowInTaskbar = $false
-            $form.TopMost = $true
-            $form.Hide()
-            $form.Show()
-        } catch {}
-    } else {
-        $stealthBtn.Text = "Stealth Mode: OFF"
-        $stealthBtn.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 20)
-        $stealthBtn.ForeColor = [System.Drawing.Color]::FromArgb(255, 200, 100)
-        
-        try {
-            $hwnd = $form.Handle
-            
-            # Mostrar en Alt+Tab
-            $currentStyle = [NativeMethods]::GetWindowLong($hwnd, [NativeMethods]::GWL_EXSTYLE)
-            $newStyle = $currentStyle -band (-bnot [NativeMethods]::WS_EX_TOOLWINDOW) -band (-bnot [NativeMethods]::WS_EX_NOACTIVATE)
-            [NativeMethods]::SetWindowLong($hwnd, [NativeMethods]::GWL_EXSTYLE, $newStyle) | Out-Null
-            
-            try {
-                $value = 0
-                [NativeMethods]::DwmSetWindowAttribute($hwnd, [NativeMethods]::DWMWA_EXCLUDED_FROM_PEEK, [ref]$value, 4) | Out-Null
-                [NativeMethods]::DwmSetWindowAttribute($hwnd, [NativeMethods]::DWMWA_CLOAK, [ref]$value, 4) | Out-Null
-            } catch {}
-            
-            $form.ShowInTaskbar = $true
-            $form.TopMost = $false
-            $form.Hide()
-            $form.Show()
-        } catch {}
+    if($script:stealthMode){
+        $stealth.Text = "Stealth Mode: ON"
+        $stealth.BackColor = [System.Drawing.Color]::FromArgb(20,60,20)
+        $stealth.ForeColor = [System.Drawing.Color]::FromArgb(100,255,100)
+        try{
+            $h = $form.Handle
+            $s = [NativeMethods]::GetWindowLong($h,-20)
+            [NativeMethods]::SetWindowLong($h,-20,$s -bor 0x80 -bor 0x08000000)|Out-Null
+            $v=1;[NativeMethods]::DwmSetWindowAttribute($h,12,[ref]$v,4)|Out-Null
+            $form.ShowInTaskbar=$false;$form.Hide();$form.Show()
+        }catch{}
+    }else{
+        $stealth.Text = "Stealth Mode: OFF"
+        $stealth.BackColor = [System.Drawing.Color]::FromArgb(60,60,20)
+        $stealth.ForeColor = [System.Drawing.Color]::FromArgb(255,200,100)
+        try{
+            $h = $form.Handle
+            $s = [NativeMethods]::GetWindowLong($h,-20)
+            [NativeMethods]::SetWindowLong($h,-20,$s -band (-bnot 0x80))|Out-Null
+            $v=0;[NativeMethods]::DwmSetWindowAttribute($h,12,[ref]$v,4)|Out-Null
+            $form.ShowInTaskbar=$true;$form.Hide();$form.Show()
+        }catch{}
     }
 })
+$form.Controls.Add($stealth)
 
-$selfDestructBtn.Add_Click({
-    $result = [System.Windows.Forms.MessageBox]::Show(
-        "Close everything?",
-        "Self Destruct",
-        [System.Windows.Forms.MessageBoxButtons]::YesNo,
-        [System.Windows.Forms.MessageBoxIcon]::Warning
-    )
-    
-    if ($result -eq [System.Windows.Forms.DialogResult]::Yes) {
-        $selfDestructBtn.Text = "DESTRUCTING..."
-        $selfDestructBtn.BackColor = [System.Drawing.Color]::FromArgb(150, 20, 20)
-        $form.Refresh()
-        Start-Sleep -Milliseconds 300
-        
-        $script:leftClickTimer.Stop()
-        $script:rightClickTimer.Stop()
-        $script:keyMonitorTimer.Stop()
-        
-        try {
-            Get-Process | Where-Object { $_.ProcessName -eq "powershell" -or $_.ProcessName -eq "pwsh" } | ForEach-Object {
-                if ($_.Id -ne $PID) {
-                    Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
-                }
-            }
-            
-            Get-Process | Where-Object { $_.ProcessName -eq "cmd" } | ForEach-Object {
-                Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
-            }
-        } catch {}
-        
-        $form.Close()
-        Stop-Process -Id $PID -Force
+# Self Destruct
+$destruct = New-Object System.Windows.Forms.Button
+$destruct.Location = New-Object System.Drawing.Point(20,218)
+$destruct.Size = New-Object System.Drawing.Size(295,28)
+$destruct.Text = "SELF DESTRUCT"
+$destruct.BackColor = [System.Drawing.Color]::FromArgb(100,20,20)
+$destruct.ForeColor = [System.Drawing.Color]::FromArgb(255,100,100)
+$destruct.FlatStyle = "Flat"
+$destruct.FlatAppearance.BorderSize = 0
+$destruct.Font = New-Object System.Drawing.Font("Segoe UI",9,[System.Drawing.FontStyle]::Bold)
+$destruct.Cursor = "Hand"
+$destruct.Add_Click({
+    if([System.Windows.Forms.MessageBox]::Show("Close everything?","Self Destruct","YesNo","Warning") -eq "Yes"){
+        $script:leftTimer.Stop();$script:rightTimer.Stop();$script:monitorTimer.Stop()
+        try{
+            Get-Process|?{$_.ProcessName -match "powershell|pwsh|cmd" -and $_.Id -ne $PID}|%{Stop-Process $_.Id -Force -EA 0}
+        }catch{}
+        $form.Close();Stop-Process -Id $PID -Force
     }
 })
+$form.Controls.Add($destruct)
 
-# Configurar timers
-$script:leftClickTimer.Add_Tick({ Invoke-LeftClick })
-$script:rightClickTimer.Add_Tick({ Invoke-RightClick })
-$script:leftClickTimer.Interval = 100
-$script:rightClickTimer.Interval = 100
-
-$script:keyMonitorTimer.Interval = 10
-$script:keyMonitorTimer.Add_Tick({ Update-KeyStates })
-$script:keyMonitorTimer.Start()
+# Timers
+$script:leftTimer.Add_Tick({Do-LeftClick})
+$script:rightTimer.Add_Tick({Do-RightClick})
+$script:leftTimer.Interval = 100
+$script:rightTimer.Interval = 100
+$script:monitorTimer.Interval = 10
+$script:monitorTimer.Add_Tick({Update-Monitor})
+$script:monitorTimer.Start()
 
 $form.Add_FormClosing({
-    $script:leftClickTimer.Stop()
-    $script:rightClickTimer.Stop()
-    $script:keyMonitorTimer.Stop()
-    $script:leftClickTimer.Dispose()
-    $script:rightClickTimer.Dispose()
-    $script:keyMonitorTimer.Dispose()
+    $script:leftTimer.Dispose()
+    $script:rightTimer.Dispose()
+    $script:monitorTimer.Dispose()
 })
 
-# Ejecutar la aplicación
 [System.Windows.Forms.Application]::Run($form)
