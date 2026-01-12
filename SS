@@ -1,6 +1,6 @@
-# =======================
-# FORCE STA
-# =======================
+# ===============================
+# FORZAR STA
+# ===============================
 if ($host.Runspace.ApartmentState -ne "STA") {
     powershell -STA -ExecutionPolicy Bypass -File $PSCommandPath
     exit
@@ -9,226 +9,157 @@ if ($host.Runspace.ApartmentState -ne "STA") {
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
-# =======================
+# ===============================
 # API
-# =======================
+# ===============================
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
-using System.Text;
 public class API {
-    [DllImport("user32.dll")] public static extern void mouse_event(int f,int x,int y,int d,int e);
-    [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int k);
-    [DllImport("user32.dll")] public static extern short GetKeyState(int k);
-    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-    [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
+    [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int vKey);
+    [DllImport("user32.dll")] public static extern void mouse_event(int a, int b, int c, int d, int e);
 }
 "@
 
-# =======================
-# COLORS
-# =======================
-$BG  = [System.Drawing.Color]::FromArgb(14,14,14)
-$PN  = [System.Drawing.Color]::FromArgb(22,22,22)
-$TXT = [System.Drawing.Color]::FromArgb(230,230,230)
-$MUT = [System.Drawing.Color]::FromArgb(130,130,130)
-$RED = [System.Drawing.Color]::FromArgb(220,40,40)
-$RSO = [System.Drawing.Color]::FromArgb(120,30,30)
+# ===============================
+# CONFIG
+# ===============================
+$BindKey = 1        # 1=LMB | 2=RMB | 0x46=F | etc
+$MinCPS = 0
+$MaxCPS = 25
+$LeftCPS = 12
+$Enabled = $true
 
-# =======================
-# STATE (RUNTIME ONLY)
-# =======================
-$script:Enabled = $true
-$script:Random  = $true
-$script:OnlyMC  = $true
-$script:LeftCPS = 10
-$script:RightCPS = 10
-
-# =======================
-# UTILS
-# =======================
-function IsKeyDown($k){ ([API]::GetAsyncKeyState($k) -band 0x8000) -ne 0 }
-function IsMouseDown($b){ ([API]::GetKeyState($b) -band 0x80) -ne 0 }
-
-function InMinecraft {
-    if (-not $script:OnlyMC) { return $true }
-    $sb = New-Object Text.StringBuilder 256
-    [API]::GetWindowText([API]::GetForegroundWindow(),$sb,$sb.Capacity) | Out-Null
-    return ($sb.ToString() -match "Minecraft")
+# ===============================
+# FUNCIONES
+# ===============================
+function IsBindDown {
+    return (([API]::GetAsyncKeyState($BindKey) -band 0x8000) -ne 0)
 }
 
-function CPSDelay($cps){
-    if (-not $script:Random) { return [Math]::Max(1,[int](1000/$cps)) }
-    $j = Get-Random -Minimum -15 -Maximum 15
-    return [Math]::Max(1,[int](1000/($cps + ($cps*$j/100))))
+function CPSDelay($cps) {
+    if ($cps -le 0) { return 1000 }
+    $base   = 1000 / $cps
+    $jitter = Get-Random -Minimum (-$base * 0.20) -Maximum ($base * 0.20)
+    $butter = Get-Random -Minimum 1 -Maximum 4
+    return [Math]::Max(1, [int]($base + $jitter + $butter))
 }
 
 function LeftClick {
     [API]::mouse_event(2,0,0,0,0)
     [API]::mouse_event(4,0,0,0,0)
 }
-function RightClick {
-    [API]::mouse_event(8,0,0,0,0)
-    [API]::mouse_event(16,0,0,0,0)
-}
 
-# =======================
+# ===============================
 # FORM
-# =======================
+# ===============================
 $f = New-Object System.Windows.Forms.Form
-$f.Size = New-Object System.Drawing.Size(360,300)
-$f.FormBorderStyle = 'None'
-$f.BackColor = $BG
+$f.Text = "Icon1CClicker"
+$f.Size = '320,220'
 $f.StartPosition = 'CenterScreen'
-$f.Opacity = 0
+$f.BackColor = [System.Drawing.Color]::FromArgb(20,20,20)
+$f.FormBorderStyle = 'FixedSingle'
+$f.MaximizeBox = $false
 $f.ShowInTaskbar = $true
+$f.Opacity = 1
 
-# Fade In
-$fadeIn = New-Object System.Windows.Forms.Timer
-$fadeIn.Interval = 15
-$fadeIn.Add_Tick({
-    if ($f.Opacity -lt 1) { $f.Opacity += 0.05 } else { $fadeIn.Stop() }
-})
-$fadeIn.Start()
-
-# Drag
-$script:d=$false
-$f.Add_MouseDown({ if($_.Y -lt 40){ $script:d=$true; $script:p=$_.Location } })
-$f.Add_MouseMove({ if($script:d){ $pt=$f.PointToScreen($_.Location); $f.Location=New-Object System.Drawing.Point($pt.X-$script:p.X,$pt.Y-$script:p.Y) } })
-$f.Add_MouseUp({ $script:d=$false })
-
-# =======================
+# ===============================
 # TITLE
-# =======================
-$t = New-Object System.Windows.Forms.Label
-$t.Text="Icon1CClicker"
-$t.Font=New-Object System.Drawing.Font("Segoe UI",14,[System.Drawing.FontStyle]::Bold)
-$t.ForeColor=$TXT
-$t.Location=New-Object System.Drawing.Point(15,10)
-$t.AutoSize=$true
-$f.Controls.Add($t)
+# ===============================
+$title = New-Object System.Windows.Forms.Label
+$title.Text = "Icon1CClicker"
+$title.ForeColor = [System.Drawing.Color]::Red
+$title.Font = New-Object System.Drawing.Font("Segoe UI",14,[System.Drawing.FontStyle]::Bold)
+$title.AutoSize = $true
+$title.Location = '80,10'
+$f.Controls.Add($title)
 
-# Discord
-$dc = New-Object System.Windows.Forms.Label
-$dc.Text="D"
-$dc.Font=New-Object System.Drawing.Font("Arial Black",12,[System.Drawing.FontStyle]::Bold)
-$dc.ForeColor=$RED
-$dc.Location=New-Object System.Drawing.Point(285,12)
-$dc.Size=New-Object System.Drawing.Size(25,25)
-$dc.TextAlign="MiddleCenter"
-$dc.Cursor="Hand"
-$dc.Add_Click({ Start-Process "https://discord.gg/zP43MEEc3A" })
-$f.Controls.Add($dc)
+# ===============================
+# CPS TEXT
+# ===============================
+$cpsText = New-Object System.Windows.Forms.Label
+$cpsText.Text = "CPS"
+$cpsText.ForeColor = 'Gray'
+$cpsText.Location = '20,55'
+$f.Controls.Add($cpsText)
 
-# Close
-$x = New-Object System.Windows.Forms.Label
-$x.Text="×"
-$x.Font=New-Object System.Drawing.Font("Segoe UI",18,[System.Drawing.FontStyle]::Bold)
-$x.ForeColor=$MUT
-$x.Location=New-Object System.Drawing.Point(320,6)
-$x.Size=New-Object System.Drawing.Size(30,30)
-$x.TextAlign="MiddleCenter"
-$x.Cursor="Hand"
-$x.Add_Click({ FadeOut })
-$x.Add_MouseEnter({ $x.ForeColor=$RED })
-$x.Add_MouseLeave({ $x.ForeColor=$MUT })
-$f.Controls.Add($x)
+# ===============================
+# CPS BAR (ESTILO IMAGEN)
+# ===============================
+$cpsBG = New-Object System.Windows.Forms.Panel
+$cpsBG.Size = '18,120'
+$cpsBG.Location = '260,45'
+$cpsBG.BackColor = [System.Drawing.Color]::FromArgb(45,45,45)
+$f.Controls.Add($cpsBG)
 
-# =======================
-# TOGGLE
-# =======================
-$tg = New-Object System.Windows.Forms.Button
-$tg.Text="ON"
-$tg.BackColor=$RED
-$tg.ForeColor=$TXT
-$tg.FlatStyle='Flat'
-$tg.FlatAppearance.BorderSize=0
-$tg.Location=New-Object System.Drawing.Point(20,50)
-$tg.Size=New-Object System.Drawing.Size(320,28)
-$tg.Font=New-Object System.Drawing.Font("Segoe UI",9,[System.Drawing.FontStyle]::Bold)
-$tg.Cursor="Hand"
-$tg.Add_Click({
-    $script:Enabled = -not $script:Enabled
-    if($script:Enabled){ $tg.Text="ON"; $tg.BackColor=$RED }
-    else{ $tg.Text="OFF"; $tg.BackColor=$RSO }
+$cpsFill = New-Object System.Windows.Forms.Panel
+$cpsFill.Size = '18,40'
+$cpsFill.BackColor = [System.Drawing.Color]::FromArgb(180,0,0)
+$cpsBG.Controls.Add($cpsFill)
+
+$cpsNum = New-Object System.Windows.Forms.Label
+$cpsNum.ForeColor = 'White'
+$cpsNum.Font = New-Object System.Drawing.Font("Segoe UI",9,[System.Drawing.FontStyle]::Bold)
+$cpsNum.AutoSize = $true
+$cpsNum.Location = '258,170'
+$f.Controls.Add($cpsNum)
+
+function UpdateCPSBar {
+    $ratio = 0
+    if ($MaxCPS -gt 0) { $ratio = $LeftCPS / $MaxCPS }
+    $height = [int](120 * $ratio)
+    $cpsFill.Height = [Math]::Max(2, $height)
+    $cpsFill.Top = 120 - $cpsFill.Height
+    $cpsNum.Text = $LeftCPS
+}
+UpdateCPSBar
+
+# CONTROL LMB / RMB SOBRE LA BARRA
+$cpsBG.Add_MouseDown({
+    if ($_.Button -eq 'Left' -and $LeftCPS -lt $MaxCPS) { $LeftCPS++ }
+    if ($_.Button -eq 'Right' -and $LeftCPS -gt $MinCPS) { $LeftCPS-- }
+    UpdateCPSBar
 })
-$f.Controls.Add($tg)
 
-# =======================
-# SELF DESTRUCT
-# =======================
-function Stop-All {
-    try { $LT.Stop(); $RT.Stop(); $MON.Stop(); $focus.Stop() } catch {}
-}
-function FadeOut {
-    Stop-All
-    $fo = New-Object System.Windows.Forms.Timer
-    $fo.Interval=15
-    $fo.Add_Tick({
-        if($f.Opacity -gt 0){ $f.Opacity -= 0.07 }
-        else{
-            $fo.Stop()
-            $f.Close()
-            Stop-Process -Id $PID -Force
-        }
-    })
-    $fo.Start()
-}
+# ===============================
+# INFO
+# ===============================
+$info = New-Object System.Windows.Forms.Label
+$info.Text = "Hold bind to click"
+$info.ForeColor = 'Gray'
+$info.Location = '20,80'
+$f.Controls.Add($info)
 
-$sd = New-Object System.Windows.Forms.Button
-$sd.Text="SELF DESTRUCT"
-$sd.BackColor=$RSO
-$sd.ForeColor=$TXT
-$sd.FlatStyle='Flat'
-$sd.FlatAppearance.BorderSize=0
-$sd.Location=New-Object System.Drawing.Point(20,245)
-$sd.Size=New-Object System.Drawing.Size(320,30)
-$sd.Font=New-Object System.Drawing.Font("Segoe UI",9,[System.Drawing.FontStyle]::Bold)
-$sd.Cursor="Hand"
-$sd.Add_Click({ FadeOut })
-$f.Controls.Add($sd)
-
-# =======================
+# ===============================
 # TIMERS
-# =======================
+# ===============================
 $LT = New-Object System.Windows.Forms.Timer
-$RT = New-Object System.Windows.Forms.Timer
-$LT.Add_Tick({ 
-    if($script:Enabled -and (InMinecraft)){ 
-        LeftClick 
-    } 
-})
-$RT.Add_Tick({ 
-    if($script:Enabled -and (InMinecraft)){ 
-        RightClick 
-    } 
+$LT.Interval = CPSDelay $LeftCPS
+$LT.Add_Tick({
+    LeftClick
+    $LT.Interval = CPSDelay $LeftCPS
 })
 
 $MON = New-Object System.Windows.Forms.Timer
-$MON.Interval=5
+$MON.Interval = 5
 $MON.Add_Tick({
-    # PANIC KEY (DELETE)
-    if (IsKeyDown 0x2E) { FadeOut }
-
-    if (IsMouseDown 1) {
-        $LT.Interval = CPSDelay $script:LeftCPS
-        if(-not $LT.Enabled){ $LT.Start() }
-    } else { $LT.Stop() }
-
-    if (IsMouseDown 2) {
-        $RT.Interval = CPSDelay $script:RightCPS
-        if(-not $RT.Enabled){ $RT.Start() }
-    } else { $RT.Stop() }
+    if ($Enabled -and (IsBindDown) -and $LeftCPS -gt 0) {
+        if (-not $LT.Enabled) {
+            $LT.Interval = CPSDelay $LeftCPS
+            $LT.Start()
+        }
+    } else {
+        if ($LT.Enabled) { $LT.Stop() }
+    }
 })
 $MON.Start()
 
-# Auto-close on focus loss
-$focus = New-Object System.Windows.Forms.Timer
-$focus.Interval=200
-$focus.Add_Tick({
-    if(-not $f.Focused){ FadeOut }
+# ===============================
+# CLEAN EXIT
+# ===============================
+$f.Add_FormClosing({
+    $LT.Stop()
+    $MON.Stop()
 })
-$focus.Start()
 
-$f.Add_FormClosing({ Stop-All })
 [System.Windows.Forms.Application]::Run($f)
