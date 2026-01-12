@@ -193,22 +193,22 @@ $rightLabel.Location = New-Object System.Drawing.Point(20,115)
 $rightLabel.AutoSize = $true
 $f.Controls.Add($rightLabel)
 
-$rightBind = New-Object System.Windows.Forms.Label
-$rightBind.Text = "none"
-$rightBind.ForeColor = [System.Drawing.Color]::Gray
-$rightBind.BackColor = [System.Drawing.Color]::FromArgb(18,18,18)
-$rightBind.Font = New-Object System.Drawing.Font("Consolas",10,[System.Drawing.FontStyle]::Bold)
-$rightBind.Location = New-Object System.Drawing.Point(100,113)
-$rightBind.Size = New-Object System.Drawing.Size(80,24)
-$rightBind.TextAlign = "MiddleCenter"
-$rightBind.Cursor = "Hand"
+$rightBindLabel = New-Object System.Windows.Forms.Label
+$rightBindLabel.Text = "none"
+$rightBindLabel.ForeColor = [System.Drawing.Color]::Gray
+$rightBindLabel.BackColor = [System.Drawing.Color]::FromArgb(18,18,18)
+$rightBindLabel.Font = New-Object System.Drawing.Font("Consolas",10,[System.Drawing.FontStyle]::Bold)
+$rightBindLabel.Location = New-Object System.Drawing.Point(100,113)
+$rightBindLabel.Size = New-Object System.Drawing.Size(80,24)
+$rightBindLabel.TextAlign = "MiddleCenter"
+$rightBindLabel.Cursor = "Hand"
 $script:listenRight = $false
-$rightBind.Add_Click({
-    $rightBind.Text = "..."
-    $rightBind.ForeColor = [System.Drawing.Color]::FromArgb(255,100,100)
+$rightBindLabel.Add_Click({
+    $rightBindLabel.Text = "..."
+    $rightBindLabel.ForeColor = [System.Drawing.Color]::FromArgb(255,100,100)
     $script:listenRight = $true
 })
-$f.Controls.Add($rightBind)
+$f.Controls.Add($rightBindLabel)
 
 $rightBG = New-Object System.Windows.Forms.Panel
 $rightBG.Size = New-Object System.Drawing.Size(220,4)
