@@ -16,7 +16,6 @@ Add-Type @"
 using System;
 using System.Runtime.InteropServices;
 public class API {
-    [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int vKey);
     [DllImport("user32.dll")] public static extern short GetKeyState(int vKey);
     [DllImport("user32.dll")] public static extern void mouse_event(int a, int b, int c, int d, int e);
 }
@@ -25,21 +24,23 @@ public class API {
 # ===============================
 # CONFIG
 # ===============================
-$script:LeftBind = 1    # 1=LMB
-$script:RightBind = 2   # 2=RMB
-$script:LeftCPS = 12
+$script:LeftBind  = 1   # LMB
+$script:RightBind = 2   # RMB
+
+$script:LeftCPS  = 12
 $script:RightCPS = 12
-$script:MinCPS = 1
+
+$script:MinCPS = 0
 $script:MaxCPS = 25
+
 $script:Enabled = $true
-$script:leftWasDown = $false
+$script:leftWasDown  = $false
 $script:rightWasDown = $false
 
 # ===============================
 # FUNCIONES
 # ===============================
 function IsPhysicallyDown($key) {
-    # Usa GetKeyState en lugar de GetAsyncKeyState para evitar detectar clicks sintéticos
     return (([API]::GetKeyState($key) -band 0x8000) -ne 0)
 }
 
@@ -70,19 +71,26 @@ $f.StartPosition = 'CenterScreen'
 $f.BackColor = [System.Drawing.Color]::FromArgb(18,18,18)
 $f.FormBorderStyle = 'None'
 $f.ShowInTaskbar = $true
+$f.TopMost = $false
 
-# Drag
+# Drag window
 $script:drag = $false
 $f.Add_MouseDown({
-    if($_.Y -lt 40){ $script:drag=$true; $script:dragPos=$_.Location }
-})
-$f.Add_MouseMove({
-    if($script:drag){ 
-        $pt=$f.PointToScreen($_.Location)
-        $f.Location=New-Object System.Drawing.Point($pt.X-$script:dragPos.X,$pt.Y-$script:dragPos.Y)
+    if($_.Y -lt 40){
+        $script:drag = $true
+        $script:dragPos = $_.Location
     }
 })
-$f.Add_MouseUp({ $script:drag=$false })
+$f.Add_MouseMove({
+    if($script:drag){
+        $pt = $f.PointToScreen($_.Location)
+        $f.Location = New-Object System.Drawing.Point(
+            $pt.X - $script:dragPos.X,
+            $pt.Y - $script:dragPos.Y
+        )
+    }
+})
+$f.Add_MouseUp({ $script:drag = $false })
 
 # ===============================
 # TITLE
@@ -110,17 +118,14 @@ $close.Add_MouseLeave({ $close.ForeColor=[System.Drawing.Color]::White })
 $f.Controls.Add($close)
 
 # ===============================
-# LEFT CLICK
+# LEFT CLICK UI
 # ===============================
 $leftLabel = New-Object System.Windows.Forms.Label
 $leftLabel.Text = "Left click"
 $leftLabel.ForeColor = [System.Drawing.Color]::FromArgb(140,140,140)
-$leftLabel.Font = New-Object System.Drawing.Font("Segoe UI",9)
-$leftLabel.AutoSize = $true
 $leftLabel.Location = New-Object System.Drawing.Point(20,55)
 $f.Controls.Add($leftLabel)
 
-# Barra horizontal izquierda
 $leftBG = New-Object System.Windows.Forms.Panel
 $leftBG.Size = New-Object System.Drawing.Size(220,4)
 $leftBG.Location = New-Object System.Drawing.Point(20,80)
@@ -128,46 +133,37 @@ $leftBG.BackColor = [System.Drawing.Color]::FromArgb(45,45,45)
 $f.Controls.Add($leftBG)
 
 $leftFill = New-Object System.Windows.Forms.Panel
-$leftFill.Size = New-Object System.Drawing.Size(105,4)
-$leftFill.Location = New-Object System.Drawing.Point(0,0)
-$leftFill.BackColor = [System.Drawing.Color]::FromArgb(88,101,242)
+$leftFill.BackColor = [System.Drawing.Color]::FromArgb(220,50,50)
 $leftBG.Controls.Add($leftFill)
 
 $leftNum = New-Object System.Windows.Forms.Label
-$leftNum.Text = "12"
 $leftNum.ForeColor = [System.Drawing.Color]::White
-$leftNum.Font = New-Object System.Drawing.Font("Segoe UI",10,[System.Drawing.FontStyle]::Bold)
-$leftNum.AutoSize = $true
-$leftNum.Location = New-Object System.Drawing.Point(245,74)
-$leftNum.TextAlign = "MiddleRight"
+$leftNum.Location = New-Object System.Drawing.Point(245,72)
 $f.Controls.Add($leftNum)
 
 function UpdateLeftBar {
     $ratio = $script:LeftCPS / $script:MaxCPS
-    $width = [int](220 * $ratio)
-    $leftFill.Width = [Math]::Max(2, $width)
-    $leftNum.Text = $script:LeftCPS.ToString()
+    $leftFill.Width = [Math]::Max(2, [int](220 * $ratio))
+    $leftFill.Height = 4
+    $leftNum.Text = $script:LeftCPS
 }
 UpdateLeftBar
 
 $leftBG.Add_MouseDown({
-    if($_.Button -eq 'Left' -and $script:LeftCPS -lt $script:MaxCPS){ $script:LeftCPS++ }
+    if($_.Button -eq 'Left'  -and $script:LeftCPS -lt $script:MaxCPS){ $script:LeftCPS++ }
     if($_.Button -eq 'Right' -and $script:LeftCPS -gt $script:MinCPS){ $script:LeftCPS-- }
     UpdateLeftBar
 })
 
 # ===============================
-# RIGHT CLICK
+# RIGHT CLICK UI
 # ===============================
 $rightLabel = New-Object System.Windows.Forms.Label
 $rightLabel.Text = "Right click"
 $rightLabel.ForeColor = [System.Drawing.Color]::FromArgb(140,140,140)
-$rightLabel.Font = New-Object System.Drawing.Font("Segoe UI",9)
-$rightLabel.AutoSize = $true
 $rightLabel.Location = New-Object System.Drawing.Point(20,105)
 $f.Controls.Add($rightLabel)
 
-# Barra horizontal derecha
 $rightBG = New-Object System.Windows.Forms.Panel
 $rightBG.Size = New-Object System.Drawing.Size(220,4)
 $rightBG.Location = New-Object System.Drawing.Point(20,130)
@@ -175,46 +171,38 @@ $rightBG.BackColor = [System.Drawing.Color]::FromArgb(45,45,45)
 $f.Controls.Add($rightBG)
 
 $rightFill = New-Object System.Windows.Forms.Panel
-$rightFill.Size = New-Object System.Drawing.Size(105,4)
-$rightFill.Location = New-Object System.Drawing.Point(0,0)
-$rightFill.BackColor = [System.Drawing.Color]::FromArgb(88,101,242)
+$rightFill.BackColor = [System.Drawing.Color]::FromArgb(220,50,50)
 $rightBG.Controls.Add($rightFill)
 
 $rightNum = New-Object System.Windows.Forms.Label
-$rightNum.Text = "12"
 $rightNum.ForeColor = [System.Drawing.Color]::White
-$rightNum.Font = New-Object System.Drawing.Font("Segoe UI",10,[System.Drawing.FontStyle]::Bold)
-$rightNum.AutoSize = $true
-$rightNum.Location = New-Object System.Drawing.Point(245,124)
-$rightNum.TextAlign = "MiddleRight"
+$rightNum.Location = New-Object System.Drawing.Point(245,122)
 $f.Controls.Add($rightNum)
 
 function UpdateRightBar {
     $ratio = $script:RightCPS / $script:MaxCPS
-    $width = [int](220 * $ratio)
-    $rightFill.Width = [Math]::Max(2, $width)
-    $rightNum.Text = $script:RightCPS.ToString()
+    $rightFill.Width = [Math]::Max(2, [int](220 * $ratio))
+    $rightFill.Height = 4
+    $rightNum.Text = $script:RightCPS
 }
 UpdateRightBar
 
 $rightBG.Add_MouseDown({
-    if($_.Button -eq 'Left' -and $script:RightCPS -lt $script:MaxCPS){ $script:RightCPS++ }
+    if($_.Button -eq 'Left'  -and $script:RightCPS -lt $script:MaxCPS){ $script:RightCPS++ }
     if($_.Button -eq 'Right' -and $script:RightCPS -gt $script:MinCPS){ $script:RightCPS-- }
     UpdateRightBar
 })
 
 # ===============================
-# TIMERS
+# TIMERS (FIXED)
 # ===============================
 $LT = New-Object System.Windows.Forms.Timer
-$LT.Interval = CPSDelay $script:LeftCPS
 $LT.Add_Tick({
     LeftClick
     $LT.Interval = CPSDelay $script:LeftCPS
 })
 
 $RT = New-Object System.Windows.Forms.Timer
-$RT.Interval = CPSDelay $script:RightCPS
 $RT.Add_Tick({
     RightClick
     $RT.Interval = CPSDelay $script:RightCPS
@@ -223,41 +211,30 @@ $RT.Add_Tick({
 $MON = New-Object System.Windows.Forms.Timer
 $MON.Interval = 5
 $MON.Add_Tick({
-    if($script:Enabled){
-        # Left click monitoring
-        $leftDown = IsPhysicallyDown $script:LeftBind
-        
-        if($leftDown -and -not $script:leftWasDown){
-            if($script:LeftCPS -gt 0){
-                $LT.Interval = CPSDelay $script:LeftCPS
-                $LT.Start()
-            }
+    if(!$script:Enabled){ return }
+
+    $leftDown = IsPhysicallyDown $script:LeftBind
+    if($leftDown){
+        if(!$LT.Enabled -and $script:LeftCPS -gt 0){
+            $LT.Interval = CPSDelay $script:LeftCPS
+            $LT.Start()
         }
-        elseif(-not $leftDown -and $script:leftWasDown){
-            $LT.Stop()
+    } else {
+        $LT.Stop()
+    }
+
+    $rightDown = IsPhysicallyDown $script:RightBind
+    if($rightDown){
+        if(!$RT.Enabled -and $script:RightCPS -gt 0){
+            $RT.Interval = CPSDelay $script:RightCPS
+            $RT.Start()
         }
-        $script:leftWasDown = $leftDown
-        
-        # Right click monitoring
-        $rightDown = IsPhysicallyDown $script:RightBind
-        
-        if($rightDown -and -not $script:rightWasDown){
-            if($script:RightCPS -gt 0){
-                $RT.Interval = CPSDelay $script:RightCPS
-                $RT.Start()
-            }
-        }
-        elseif(-not $rightDown -and $script:rightWasDown){
-            $RT.Stop()
-        }
-        $script:rightWasDown = $rightDown
+    } else {
+        $RT.Stop()
     }
 })
 $MON.Start()
 
-# ===============================
-# EXIT
-# ===============================
 $f.Add_FormClosing({
     $LT.Stop()
     $RT.Stop()
