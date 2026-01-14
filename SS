@@ -1,4 +1,4 @@
-# Desactivar el guardado de historial inmediatamente
+# Ghost Mode Init - Bloqueo de rastro
 try { Set-PSReadLineOption -HistorySaveStyle SaveNothing -ErrorAction SilentlyContinue } catch {}
 
 if ($host.Runspace.ApartmentState -ne "STA") {
@@ -23,7 +23,7 @@ public class API {
 "@
 Add-Type -TypeDefinition $apiSignature
 
-# Ocultar consola al instante
+# Ocultar la consola de comandos inmediatamente (Para ser un proceso de fondo)
 [API]::ShowWindow([API]::GetConsoleWindow(), 0)
 
 $script:LeftBindKey = 0
@@ -32,8 +32,8 @@ $script:LeftCPS = 12
 $script:RightCPS = 12
 $script:MaxCPS = 25
 $script:JitterEnabled = $false
-$script:isDraggingL = $false
-$script:isDraggingR = $false
+$script:IsHidden = $false  # Estado de visibilidad para el usuario
+$script:LastVisibleTick = 0
 
 $script:stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 $script:lastLeftClick = 0
@@ -47,13 +47,14 @@ function IsKeyDown($k) {
 }
 
 function GetKeyName($k) {
-    $names = @{0="...";1="LMB";2="RMB";4="MMB";5="MB4";6="MB5";32="Space";16="Shift";17="Ctrl";18="Alt"}
+    $names = @{0="...";1="LMB";2="RMB";4="MMB";5="MB4";6="MB5";32="Space";16="Shift";17="Ctrl";18="Alt";45="INS"}
     65..90|%{$names[$_]=[char]$_}
     112..123|%{$names[$_]="F"+($_-111)}
     return if($names[$k]){$names[$k]}else{"K:$k"}
 }
 
 function GetNextDelay($cps) {
+    if (-not $script:JitterEnabled) { return 1000.0 / $cps }
     $v = (Get-Random -Minimum -1.5 -Maximum 1.5)
     return 1000.0 / ($cps + $v)
 }
@@ -61,130 +62,137 @@ function GetNextDelay($cps) {
 function DoLeftClick {
     if ($script:JitterEnabled) { [API]::mouse_event(0x0001, (Get-Random -Min -1 -Max 2), (Get-Random -Min -1 -Max 2), 0, 0) }
     [API]::mouse_event(0x0002, 0, 0, 0, 0)
-    [System.Threading.Thread]::Sleep(6)
+    [System.Threading.Thread]::Sleep(7)
     [API]::mouse_event(0x0004, 0, 0, 0, 0)
 }
 
 function DoRightClick {
     if ($script:JitterEnabled) { [API]::mouse_event(0x0001, (Get-Random -Min -1 -Max 2), (Get-Random -Min -1 -Max 2), 0, 0) }
     [API]::mouse_event(0x0008, 0, 0, 0, 0)
-    [System.Threading.Thread]::Sleep(6)
+    [System.Threading.Thread]::Sleep(7)
     [API]::mouse_event(0x0010, 0, 0, 0, 0)
 }
 
+# --- INTERFAZ ---
 $f = New-Object System.Windows.Forms.Form
+$f.Text = "AppModel_Host" # Nombre genérico para pasar desapercibido
 $f.Size = New-Object System.Drawing.Size(360,320)
 $f.BackColor = [System.Drawing.Color]::FromArgb(15,15,15)
 $f.FormBorderStyle = 'None'
 $f.StartPosition = 'CenterScreen'
 $f.ShowInTaskbar = $false
+$f.TopMost = $false # Para que no se quede siempre delante del juego
 
-# Stream Proof
+# Stream Proof (Invisible para otros)
 $f.Add_Load({ [API]::SetWindowDisplayAffinity($f.Handle, 0x00000011) })
 
-# Arrastrar ventana
 $f.Add_MouseDown({ if($_.Button -eq 'Left' -and $_.Y -lt 40){ $f.Capture=$true; $script:dX=$_.X; $script:dY=$_.Y }})
 $f.Add_MouseMove({ if($f.Capture){ $p=[System.Windows.Forms.Cursor]::Position; $f.Location=New-Object System.Drawing.Point(($p.X-$script:dX),($p.Y-$script:dY)) }})
 $f.Add_MouseUp({ $f.Capture=$false })
 
 $title = New-Object System.Windows.Forms.Label
-$title.Text = "Icon1CClicker"
-$title.ForeColor = [System.Drawing.Color]::White
-$title.Font = New-Object System.Drawing.Font("Segoe UI",14,1)
+$title.Text = "Self Destruct Mode"; $title.ForeColor = [System.Drawing.Color]::Gray
+$title.Font = New-Object System.Drawing.Font("Segoe UI",10,1)
 $title.Location = New-Object System.Drawing.Point(15,12); $title.AutoSize=$true; $f.Controls.Add($title)
 
-$close = New-Object System.Windows.Forms.Label
-$close.Text = "×"; $close.Font = New-Object System.Drawing.Font("Arial",20,1); $close.ForeColor = [System.Drawing.Color]::Gray
-$close.Location = New-Object System.Drawing.Point(325,8); $close.Cursor="Hand"; $close.Add_Click({$f.Close()}); $f.Controls.Add($close)
+$info = New-Object System.Windows.Forms.Label
+$info.Text = "Press [INSERT] to Hide/Show Menu"; $info.ForeColor = [System.Drawing.Color]::DimGray
+$info.Location = New-Object System.Drawing.Point(15,40); $info.AutoSize=$true; $f.Controls.Add($info)
 
-# Secciones Click
-function CreateClickRow($txt, $y, $color) {
+function CreateRow($txt, $y, $color) {
     $l = New-Object System.Windows.Forms.Label
-    $l.Text = $txt; $l.ForeColor = [System.Drawing.Color]::LightGray; $l.Location = New-Object System.Drawing.Point(20,$y); $f.Controls.Add($l)
-    
+    $l.Text = $txt; $l.ForeColor = [System.Drawing.Color]::White; $l.Location = New-Object System.Drawing.Point(20,$y); $f.Controls.Add($l)
     $b = New-Object System.Windows.Forms.Label
-    $b.Text = "NONE"; $b.BackColor = [System.Drawing.Color]::FromArgb(25,25,25); $b.ForeColor = [System.Drawing.Color]::Gray
+    $b.Text = "NONE"; $b.BackColor = [System.Drawing.Color]::FromArgb(25,25,25); $b.ForeColor = [System.Drawing.Color]::Cyan
     $b.TextAlign = "MiddleCenter"; $b.Size = New-Object System.Drawing.Size(80,24); $b.Location = New-Object System.Drawing.Point(100,$y-2); $b.Cursor="Hand"
     $f.Controls.Add($b)
-    
     $bar = New-Object System.Windows.Forms.Panel
     $bar.Size = New-Object System.Drawing.Size(220,12); $bar.Location = New-Object System.Drawing.Point(20,$y+35); $bar.BackColor = [System.Drawing.Color]::FromArgb(35,35,35)
     $f.Controls.Add($bar)
-    
     $fill = New-Object System.Windows.Forms.Panel
     $fill.Size = New-Object System.Drawing.Size(10,12); $fill.BackColor = $color; $fill.Enabled = $false
     $bar.Controls.Add($fill)
-    
     $num = New-Object System.Windows.Forms.Label
-    $num.ForeColor = [System.Drawing.Color]::White; $num.Font = New-Object System.Drawing.Font("Segoe UI",10,1)
-    $num.Location = New-Object System.Drawing.Point(250,$y+30); $f.Controls.Add($num)
-    
+    $num.ForeColor = [System.Drawing.Color]::White; $num.Font = New-Object System.Drawing.Font("Segoe UI",9,1)
+    $num.Location = New-Object System.Drawing.Point(250,$y+32); $f.Controls.Add($num)
     return @($b, $bar, $fill, $num)
 }
 
-$leftUI = CreateClickRow "Left Click" 65 ([System.Drawing.Color]::FromArgb(88,101,242))
-$rightUI = CreateClickRow "Right Click" 135 ([System.Drawing.Color]::FromArgb(235,69,158))
+$LUI = CreateRow "Left Click" 80 ([System.Drawing.Color]::DodgerBlue)
+$RUI = CreateRow "Right Click" 150 ([System.Drawing.Color]::Magenta)
 
 function UpdateUI {
-    $leftUI[2].Width = [int](220 * ($script:LeftCPS / $script:MaxCPS)); $leftUI[3].Text = $script:LeftCPS
-    $rightUI[2].Width = [int](220 * ($script:RightCPS / $script:MaxCPS)); $rightUI[3].Text = $script:RightCPS
+    $LUI[2].Width = [int](220 * ($script:LeftCPS / 25)); $LUI[3].Text = "$($script:LeftCPS) CPS"
+    $RUI[2].Width = [int](220 * ($script:RightCPS / 25)); $RUI[3].Text = "$($script:RightCPS) CPS"
 }
 UpdateUI
 
-# Sliders funcionales
-$leftUI[1].Add_MouseDown({ $script:isDraggingL=$true; & $moveL })
-$leftUI[1].Add_MouseUp({ $script:isDraggingL=$false })
-$leftUI[1].Add_MouseMove({ if($script:isDraggingL){ $perc=[Math]::Max(0,[Math]::Min(1,($_.X/$leftUI[1].Width))); $script:LeftCPS=[Math]::Max(1,[int]($perc*25)); UpdateUI }})
+# Lógica de Sliders
+$LUI[1].Add_MouseDown({ $script:dragL=$true; $perc=[Math]::Max(0,[Math]::Min(1,($_.X/$LUI[1].Width))); $script:LeftCPS=[Math]::Max(1,[int]($perc*25)); UpdateUI })
+$LUI[1].Add_MouseUp({ $script:dragL=$false })
+$LUI[1].Add_MouseMove({ if($script:dragL){ $perc=[Math]::Max(0,[Math]::Min(1,($_.X/$LUI[1].Width))); $script:LeftCPS=[Math]::Max(1,[int]($perc*25)); UpdateUI }})
 
-$rightUI[1].Add_MouseDown({ $script:isDraggingR=$true; & $moveR })
-$rightUI[1].Add_MouseUp({ $script:isDraggingR=$false })
-$rightUI[1].Add_MouseMove({ if($script:isDraggingR){ $perc=[Math]::Max(0,[Math]::Min(1,($_.X/$rightUI[1].Width))); $script:RightCPS=[Math]::Max(1,[int]($perc*25)); UpdateUI }})
+$RUI[1].Add_MouseDown({ $script:dragR=$true; $perc=[Math]::Max(0,[Math]::Min(1,($_.X/$RUI[1].Width))); $script:RightCPS=[Math]::Max(1,[int]($perc*25)); UpdateUI })
+$RUI[1].Add_MouseUp({ $script:dragR=$false })
+$RUI[1].Add_MouseMove({ if($script:dragR){ $perc=[Math]::Max(0,[Math]::Min(1,($_.X/$RUI[1].Width))); $script:RightCPS=[Math]::Max(1,[int]($perc*25)); UpdateUI }})
 
-# Binds
-$leftUI[0].Add_Click({ $leftUI[0].Text="..."; $script:listenL=$true })
-$rightUI[0].Add_Click({ $rightUI[0].Text="..."; $script:listenR=$true })
+$LUI[0].Add_Click({ $LUI[0].Text="..."; $script:lisL=$true })
+$RUI[0].Add_Click({ $RUI[0].Text="..."; $script:lisR=$true })
 
-$cbJitter = New-Object System.Windows.Forms.CheckBox
-$cbJitter.Text = "Enable Jitter"; $cbJitter.ForeColor = [System.Drawing.Color]::White; $cbJitter.Location = New-Object System.Drawing.Point(20,210)
-$cbJitter.Add_CheckedChanged({ $script:JitterEnabled = $cbJitter.Checked }); $f.Controls.Add($cbJitter)
+$cbJit = New-Object System.Windows.Forms.CheckBox
+$cbJit.Text = "Realism Jitter"; $cbJit.ForeColor = [System.Drawing.Color]::White; $cbJit.Location = New-Object System.Drawing.Point(20,220)
+$cbJit.Add_CheckedChanged({ $script:JitterEnabled = $cbJit.Checked }); $f.Controls.Add($cbJit)
 
-$btnDestruct = New-Object System.Windows.Forms.Button
-$btnDestruct.Text = "SELF DESTRUCT"; $btnDestruct.BackColor = [System.Drawing.Color]::FromArgb(180,40,40); $btnDestruct.ForeColor = [System.Drawing.Color]::White
-$btnDestruct.FlatStyle = "Flat"; $btnDestruct.Location = New-Object System.Drawing.Point(20,260); $btnDestruct.Size = New-Object System.Drawing.Size(320,35); $btnDestruct.Font = New-Object System.Drawing.Font("Segoe UI",9,1)
-$btnDestruct.Add_Click({ $f.Close() }); $f.Controls.Add($btnDestruct)
+$btnSD = New-Object System.Windows.Forms.Button
+$btnSD.Text = "SELF DESTRUCT"; $btnSD.BackColor = [System.Drawing.Color]::FromArgb(40,40,40); $btnSD.ForeColor = [System.Drawing.Color]::Red
+$btnSD.FlatStyle = "Flat"; $btnSD.Location = New-Object System.Drawing.Point(20,260); $btnSD.Size = New-Object System.Drawing.Size(320,35)
+$btnSD.Add_Click({ $f.Close() }); $f.Controls.Add($btnSD)
 
-$mainTimer = New-Object System.Windows.Forms.Timer; $mainTimer.Interval = 1
-$mainTimer.Add_Tick({
-    $currentTime = $script:stopwatch.ElapsedMilliseconds
-    if($script:listenL -or $script:listenR){
+# BUCLE PRINCIPAL
+$timer = New-Object System.Windows.Forms.Timer; $timer.Interval = 1
+$timer.Add_Tick({
+    $now = $script:stopwatch.ElapsedMilliseconds
+
+    # TOGGLE VISIBILIDAD (TECLA INSERT)
+    if (IsKeyDown 0x2D) { # 0x2D = INSERT
+        if (($now - $script:LastVisibleTick) -gt 500) { # Anti-rebote
+            $script:IsHidden = -not $script:IsHidden
+            if ($script:IsHidden) { $f.Hide() } else { $f.Show() }
+            $script:LastVisibleTick = $now
+        }
+    }
+
+    if($script:lisL -or $script:lisR){
         for($i=1;$i -le 165;$i++){ if(IsKeyDown $i){
-            if($script:listenL){ $script:LeftBindKey=$i; $leftUI[0].Text=GetKeyName $i; $script:listenL=$false }
-            elseif($script:listenR){ $script:RightBindKey=$i; $rightUI[0].Text=GetKeyName $i; $script:listenR=$false }
-            Start-Sleep -m 200; return
+            if($script:lisL){ $script:LeftBindKey=$i; $LUI[0].Text=GetKeyName $i; $script:lisL=$false }
+            elseif($script:lisR){ $script:RightBindKey=$i; $RUI[0].Text=GetKeyName $i; $script:lisR=$false }
+            return
         }} return
     }
+
     if($script:LeftBindKey -ne 0 -and (IsKeyDown $script:LeftBindKey)){
-        if(($currentTime-$script:lastLeftClick) -ge $script:nextLeftDelay){ DoLeftClick; $script:lastLeftClick=$script:stopwatch.ElapsedMilliseconds; $script:nextLeftDelay=GetNextDelay $script:LeftCPS }
+        if(($now - $script:lastLeftClick) -ge $script:nextLeftDelay){
+            DoLeftClick
+            $script:lastLeftClick = $script:stopwatch.ElapsedMilliseconds
+            $script:nextLeftDelay = GetNextDelay $script:LeftCPS
+        }
     }
     if($script:RightBindKey -ne 0 -and (IsKeyDown $script:RightBindKey)){
-        if(($currentTime-$script:lastRightClick) -ge $script:nextRightDelay){ DoRightClick; $script:lastRightClick=$script:stopwatch.ElapsedMilliseconds; $script:nextRightDelay=GetNextDelay $script:RightCPS }
+        if(($now - $script:lastRightClick) -ge $script:nextRightDelay){
+            DoRightClick
+            $script:lastRightClick = $script:stopwatch.ElapsedMilliseconds
+            $script:nextRightDelay = GetNextDelay $script:RightCPS
+        }
     }
 })
-$mainTimer.Start()
+$timer.Start()
 
 $f.Add_FormClosing({
-    $mainTimer.Stop(); $script:stopwatch.Stop()
-    # LIMPIEZA EXTREMA
+    $timer.Stop()
     Clear-History -ErrorAction SilentlyContinue
-    try {
-        $path = (Get-PSReadlineOption).HistorySavePath
-        if(Test-Path $path){ 
-            " " | Out-File $path -Force # Sobrescribir con espacio en blanco antes de borrar
-            Remove-Item $path -Force -ErrorAction SilentlyContinue 
-        }
-    } catch {}
+    $h = (Get-PSReadlineOption).HistorySavePath
+    if(Test-Path $h){ " " | Out-File $h -Force; Remove-Item $h -Force }
     Remove-Item "$env:APPDATA\Microsoft\Windows\Recent\*" -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item "$env:LOCALAPPDATA\Microsoft\Windows\PowerShell\PowerShell_transcript.*" -Force -ErrorAction SilentlyContinue
 })
 
 [System.Windows.Forms.Application]::Run($f)
