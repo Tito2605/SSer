@@ -1,4 +1,4 @@
-# --- CONFIGURACIÓN DE SIGILO INICIAL ---
+# --- CONFIGURACIÓN DE SIGILO TOTAL ---
 try { Set-PSReadLineOption -HistorySaveStyle SaveNothing -ErrorAction SilentlyContinue } catch {}
 
 if ($host.Runspace.ApartmentState -ne "STA") {
@@ -22,7 +22,7 @@ public class API {
 "@
 Add-Type -TypeDefinition $api
 
-# Ocultar la consola para que sea proceso de fondo inmediatamente
+# Ocultar consola (Proceso de fondo)
 [API]::ShowWindow([API]::GetConsoleWindow(), 0)
 
 # --- VARIABLES ---
@@ -45,14 +45,14 @@ function GetDelay($cps) {
     return 1000.0 / ($cps + $v)
 }
 
-# --- INTERFAZ (IDÉNTICA A LA FOTO) ---
+# --- INTERFAZ (DISEÑO FIJO SIN BUGS) ---
 $f = New-Object System.Windows.Forms.Form
 $f.Text = "Icon1CClicker" 
 $f.Size = New-Object System.Drawing.Size(360,330)
 $f.BackColor = [System.Drawing.Color]::FromArgb(20,20,20)
-$f.FormBorderStyle = 'None'; $f.StartPosition = 'CenterScreen'; $f.ShowInTaskbar = $false; $f.TopMost = $true
+$f.FormBorderStyle = 'None'; $f.StartPosition = 'CenterScreen'; $f.ShowInTaskbar = $true; $f.TopMost = $true
 
-# Evitar captura de pantalla (Stream Proof)
+# Stream Proof (Invisible en capturas/Discord)
 $f.Add_Load({ [API]::SetWindowDisplayAffinity($f.Handle, 0x11) })
 
 # Arrastrar ventana
@@ -60,7 +60,7 @@ $f.Add_MouseDown({ if($_.Button -eq 'Left' -and $_.Y -lt 45){ $f.Capture=$true; 
 $f.Add_MouseMove({ if($f.Capture){ $p=[System.Windows.Forms.Cursor]::Position; $f.Location=New-Object System.Drawing.Point(($p.X-$script:dX),($p.Y-$script:dY)) }})
 $f.Add_MouseUp({ $f.Capture=$false })
 
-# Logo azul arriba a la izquierda (como en tu imagen)
+# Logo azul (Estilo Windows Service)
 $logo = New-Object System.Windows.Forms.Panel
 $logo.Size = New-Object System.Drawing.Size(18,18); $logo.Location = New-Object System.Drawing.Point(12,14)
 $logo.BackColor = [System.Drawing.Color]::FromArgb(0,120,215); $f.Controls.Add($logo)
@@ -78,7 +78,7 @@ $close = New-Object System.Windows.Forms.Label
 $close.Text = "×"; $close.Font = New-Object System.Drawing.Font("Arial",18); $close.ForeColor = [System.Drawing.Color]::DimGray
 $close.Location = New-Object System.Drawing.Point(325,8); $close.Cursor = "Hand"; $close.Add_Click({ $f.Close() }); $f.Controls.Add($close)
 
-# --- SISTEMA DE FILAS (REPARADO) ---
+# --- FILAS DE CONTROL ---
 function CreateSliderRow($txt, $y, $color) {
     $l = New-Object System.Windows.Forms.Label
     $l.Text = $txt; $l.ForeColor = [System.Drawing.Color]::LightGray; $l.Location = New-Object System.Drawing.Point(20,$y); $f.Controls.Add($l)
@@ -115,7 +115,7 @@ function UpdateBars {
 }
 UpdateBars
 
-# Lógica de arrastre de volumen
+# Lógica de arrastre suave (Tipo Volumen)
 $LUI[1].Add_MouseDown({ $script:drL=$true; $p=[Math]::Max(0,[Math]::Min(1,($_.X/$LUI[1].Width))); $script:LeftCPS=[Math]::Max(1,[int]($p*25)); UpdateBars })
 $LUI[1].Add_MouseUp({ $script:drL=$false })
 $LUI[1].Add_MouseMove({ if($script:drL){ $p=[Math]::Max(0,[Math]::Min(1,($_.X/$LUI[1].Width))); $script:LeftCPS=[Math]::Max(1,[int]($p*25)); UpdateBars }})
@@ -136,20 +136,22 @@ $btnSD.Text = "SELF DESTRUCT"; $btnSD.BackColor = [System.Drawing.Color]::FromAr
 $btnSD.FlatStyle = "Flat"; $btnSD.Location = New-Object System.Drawing.Point(20, 270); $btnSD.Size = New-Object System.Drawing.Size(320, 38); $btnSD.Font = New-Object System.Drawing.Font("Segoe UI",10,1)
 $btnSD.Add_Click({ $f.Close() }); $f.Controls.Add($btnSD)
 
-# --- MOTOR Y CAMUFLAJE ---
+# --- BUCLE DE CONTROL Y CAMUFLAJE ---
 $t = New-Object System.Windows.Forms.Timer; $t.Interval = 1
 $t.Add_Tick({
     $now = $script:sw.ElapsedMilliseconds
 
-    # F10: ACTIVAR GHOST MODE Y CAMUFLAR PROCESO
+    # F10: MODO FANTASMA TOTAL
     if (IsDown 0x79) {
         if (($now - $script:LastToggle) -gt 500) {
             $script:IsHidden = -not $script:IsHidden
             if ($script:IsHidden) {
                 $f.Hide()
-                $f.Text = "appmodel" # Cambia el nombre en el Administrador de Tareas
+                $f.ShowInTaskbar = $false
+                $f.Text = "appmodel" # Camuflaje en Task Manager
             } else {
                 $f.Text = "Icon1CClicker"
+                $f.ShowInTaskbar = $true
                 $f.Show()
             }
             $script:LastToggle = $now
@@ -164,6 +166,7 @@ $t.Add_Tick({
         }} return
     }
 
+    # Motor de clicks
     if($script:LeftBind -ne 0 -and (IsDown $script:LeftBind)){
         if(($now - $script:lLast) -ge $script:lDelay){
             [API]::mouse_event(0x0002,0,0,0,0); [System.Threading.Thread]::Sleep(7); [API]::mouse_event(0x0004,0,0,0,0)
