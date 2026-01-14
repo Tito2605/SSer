@@ -1,4 +1,4 @@
-# Ghost Init - Sin rastro
+# Ghost Init
 try { Set-PSReadLineOption -HistorySaveStyle SaveNothing -ErrorAction SilentlyContinue } catch {}
 
 if ($host.Runspace.ApartmentState -ne "STA") {
@@ -22,7 +22,6 @@ public class API {
 "@
 Add-Type -TypeDefinition $api
 
-# Ocultar consola para que sea proceso de fondo
 [API]::ShowWindow([API]::GetConsoleWindow(), 0)
 
 $script:LeftBind = 0; $script:RightBind = 0
@@ -47,58 +46,66 @@ function GetDelay($cps) {
     return 1000.0 / ($cps + $v)
 }
 
-# --- GUI RECONSTRUIDA (SIN BUGS) ---
+# --- VENTANA PRINCIPAL ---
 $f = New-Object System.Windows.Forms.Form
 $f.Text = "Host de servicio: appmodel" 
-$f.Size = New-Object System.Drawing.Size(360,320)
-$f.BackColor = [System.Drawing.Color]::FromArgb(20,20,20)
+$f.Size = New-Object System.Drawing.Size(360,350) # Un poco más alta para que quepa todo
+$f.BackColor = [System.Drawing.Color]::FromArgb(25,25,25)
 $f.FormBorderStyle = 'None'
 $f.StartPosition = 'CenterScreen'
 $f.ShowInTaskbar = $false
-$f.TopMost = $true # Para que lo veas sobre el juego al configurar
+$f.TopMost = $true
 
 # Stream Proof
 $f.Add_Load({ [API]::SetWindowDisplayAffinity($f.Handle, 0x11) })
 
-# Movimiento
+# Movimiento de ventana
 $f.Add_MouseDown({ if($_.Button -eq 'Left'){ $f.Capture=$true; $script:dX=$_.X; $script:dY=$_.Y }})
 $f.Add_MouseMove({ if($f.Capture){ $p=[System.Windows.Forms.Cursor]::Position; $f.Location=New-Object System.Drawing.Point(($p.X-$script:dX),($p.Y-$script:dY)) }})
 $f.Add_MouseUp({ $f.Capture=$false })
 
+# Titulo y Ayuda
 $title = New-Object System.Windows.Forms.Label
-$title.Text = "AppModel Ghost Clicker"; $title.ForeColor = [System.Drawing.Color]::Gray
-$title.Font = New-Object System.Drawing.Font("Segoe UI",10,1)
-$title.Location = New-Object System.Drawing.Point(15,12); $title.AutoSize=$true; $f.Controls.Add($title)
+$title.Text = "APPMODEL CONTROL PANEL"; $title.ForeColor = [System.Drawing.Color]::Gray
+$title.Font = New-Object System.Drawing.Font("Segoe UI",9,1); $title.Location = New-Object System.Drawing.Point(20,15); $title.AutoSize=$true; $f.Controls.Add($title)
 
 $hint = New-Object System.Windows.Forms.Label
-$hint.Text = "TOGGLE MENU: [F10]"; $hint.ForeColor = [System.Drawing.Color]::Cyan
-$hint.Location = New-Object System.Drawing.Point(15,35); $hint.AutoSize=$true; $f.Controls.Add($hint)
+$hint.Text = "TECLA MENU: [F10]"; $hint.ForeColor = [System.Drawing.Color]::Cyan
+$hint.Font = New-Object System.Drawing.Font("Segoe UI",8,1); $hint.Location = New-Object System.Drawing.Point(230,15); $hint.AutoSize=$true; $f.Controls.Add($hint)
 
+# --- CREADOR DE FILAS (REHECHO) ---
 function NewRow($txt, $y, $color) {
+    # Texto Clic
     $l = New-Object System.Windows.Forms.Label
-    $l.Text = $txt; $l.ForeColor = [System.Drawing.Color]::White; $l.Location = New-Object System.Drawing.Point(25,$y); $f.Controls.Add($l)
+    $l.Text = $txt; $l.ForeColor = [System.Drawing.Color]::White; $l.Location = New-Object System.Drawing.Point(30,$y); $f.Controls.Add($l)
     
+    # Boton Bind
     $btn = New-Object System.Windows.Forms.Label
-    $btn.Text = "NONE"; $btn.BackColor = [System.Drawing.Color]::FromArgb(40,40,40); $btn.ForeColor = [System.Drawing.Color]::White
-    $btn.TextAlign = "MiddleCenter"; $btn.Size = New-Object System.Drawing.Size(70,22); $btn.Location = New-Object System.Drawing.Point(110,$y-2); $btn.Cursor="Hand"
+    $btn.Text = "NONE"; $btn.BackColor = [System.Drawing.Color]::FromArgb(45,45,45); $btn.ForeColor = [System.Drawing.Color]::White
+    $btn.TextAlign = "MiddleCenter"; $btn.Size = New-Object System.Drawing.Size(75,22); $btn.Location = New-Object System.Drawing.Point(120,$y-2); $btn.Cursor="Hand"
     $f.Controls.Add($btn)
     
+    # Fondo de la barra (Clickable)
     $bar = New-Object System.Windows.Forms.Panel
-    $bar.Size = New-Object System.Drawing.Size(200,10); $bar.Location = New-Object System.Drawing.Point(25,$y+30); $bar.BackColor = [System.Drawing.Color]::Black
+    $bar.Size = New-Object System.Drawing.Size(200,12); $bar.Location = New-Object System.Drawing.Point(30,$y+30); $bar.BackColor = [System.Drawing.Color]::Black
     $f.Controls.Add($bar)
     
+    # Relleno de la barra
     $fill = New-Object System.Windows.Forms.Panel
-    $fill.BackColor = $color; $fill.Size = New-Object System.Drawing.Size(0,10); $fill.Enabled = $false # Importante: False para no buguear clics
+    $fill.BackColor = $color; $fill.Size = New-Object System.Drawing.Size(0,12); $fill.Enabled = $false # Desactivado para no tapar clics
     $bar.Controls.Add($fill)
     
+    # Numero CPS
     $num = New-Object System.Windows.Forms.Label
-    $num.ForeColor = [System.Drawing.Color]::White; $num.Location = New-Object System.Drawing.Point(235,$y+27); $num.AutoSize=$true
+    $num.ForeColor = [System.Drawing.Color]::White; $num.Font = New-Object System.Drawing.Font("Segoe UI",9,1)
+    $num.Location = New-Object System.Drawing.Point(240,$y+28); $num.AutoSize=$true
     $f.Controls.Add($num)
     
     return @($btn, $bar, $fill, $num)
 }
 
-$LUI = NewRow "Left Click" 80 ([System.Drawing.Color]::DodgerBlue)
+# Crear filas con espacios fijos (y=70 y y=150)
+$LUI = NewRow "Left Click" 70 ([System.Drawing.Color]::DodgerBlue)
 $RUI = NewRow "Right Click" 150 ([System.Drawing.Color]::DeepPink)
 
 function RefreshUI {
@@ -107,7 +114,7 @@ function RefreshUI {
 }
 RefreshUI
 
-# Manejo de Sliders corregido
+# Logica de Sliders
 $LUI[1].Add_MouseDown({ $script:drL=$true; $p=[Math]::Max(0,[Math]::Min(1,($_.X/$LUI[1].Width))); $script:LeftCPS=[Math]::Max(1,[int]($p*25)); RefreshUI })
 $LUI[1].Add_MouseUp({ $script:drL=$false })
 $LUI[1].Add_MouseMove({ if($script:drL){ $p=[Math]::Max(0,[Math]::Min(1,($_.X/$LUI[1].Width))); $script:LeftCPS=[Math]::Max(1,[int]($p*25)); RefreshUI }})
@@ -119,22 +126,24 @@ $RUI[1].Add_MouseMove({ if($script:drR){ $p=[Math]::Max(0,[Math]::Min(1,($_.X/$R
 $LUI[0].Add_Click({ $LUI[0].Text="..."; $script:lisL=$true })
 $RUI[0].Add_Click({ $RUI[0].Text="..."; $script:lisR=$true })
 
+# Opciones inferiores
 $cbJ = New-Object System.Windows.Forms.CheckBox
-$cbJ.Text = "Realism Jitter (2-3 Variation)"; $cbJ.ForeColor = [System.Drawing.Color]::White; $cbJ.Location = New-Object System.Drawing.Point(25,210); $cbJ.AutoSize=$true
+$cbJ.Text = "Variation Mode (Jitter)"; $cbJ.ForeColor = [System.Drawing.Color]::White
+$cbJ.Location = New-Object System.Drawing.Point(30,225); $cbJ.AutoSize=$true
 $cbJ.Add_CheckedChanged({ $script:Jitter = $cbJ.Checked }); $f.Controls.Add($cbJ)
 
 $btnSD = New-Object System.Windows.Forms.Button
-$btnSD.Text = "CLEAN & SELF DESTRUCT"; $btnSD.BackColor = [System.Drawing.Color]::FromArgb(40,10,10); $btnSD.ForeColor = [System.Drawing.Color]::White
-$btnSD.FlatStyle = "Flat"; $btnSD.Location = New-Object System.Drawing.Point(25,260); $btnSD.Size = New-Object System.Drawing.Size(300,35)
+$btnSD.Text = "DESTRUCT & CLEAN LOGS"; $btnSD.BackColor = [System.Drawing.Color]::FromArgb(60,20,20); $btnSD.ForeColor = [System.Drawing.Color]::White
+$btnSD.FlatStyle = "Flat"; $btnSD.Location = New-Object System.Drawing.Point(30,270); $btnSD.Size = New-Object System.Drawing.Size(300,40)
 $btnSD.Add_Click({ $f.Close() }); $f.Controls.Add($btnSD)
 
-# --- BUCLE DE ALTA PRECISIÓN ---
+# --- MOTOR ---
 $t = New-Object System.Windows.Forms.Timer; $t.Interval = 1
 $t.Add_Tick({
     $now = $script:sw.ElapsedMilliseconds
 
-    # TOGGLE F10
-    if (IsDown 0x79) { # 0x79 = F10
+    # F10 Toggle
+    if (IsDown 0x79) {
         if (($now - $script:LastToggle) -gt 400) {
             $script:IsHidden = -not $script:IsHidden
             if ($script:IsHidden) { $f.Hide() } else { $f.Show() }
@@ -150,7 +159,6 @@ $t.Add_Tick({
         }} return
     }
 
-    # Motor Click
     if($script:LeftBind -ne 0 -and (IsDown $script:LeftBind)){
         if(($now - $script:lLast) -ge $script:lDelay){
             [API]::mouse_event(0x0002,0,0,0,0); [System.Threading.Thread]::Sleep(7); [API]::mouse_event(0x0004,0,0,0,0)
@@ -169,8 +177,7 @@ $t.Add_Tick({
 $t.Start()
 
 $f.Add_FormClosing({
-    $t.Stop(); $script:sw.Stop()
-    Clear-History -ErrorAction SilentlyContinue
+    $t.Stop(); Clear-History -ErrorAction SilentlyContinue
     $h = (Get-PSReadlineOption).HistorySavePath
     if(Test-Path $h){ " " | Out-File $h -Force; Remove-Item $h -Force }
     Remove-Item "$env:APPDATA\Microsoft\Windows\Recent\*" -Recurse -Force -ErrorAction SilentlyContinue
