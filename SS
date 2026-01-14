@@ -1,6 +1,3 @@
-# ===============================
-# FORZAR MODO STA (Requerido para GUI)
-# ===============================
 if ($host.Runspace.ApartmentState -ne "STA") {
     powershell -STA -ExecutionPolicy Bypass -File $PSCommandPath
     exit
@@ -9,9 +6,6 @@ if ($host.Runspace.ApartmentState -ne "STA") {
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
-# ===============================
-# API WINDOWS (USER32) - Alta Eficiencia
-# ===============================
 $apiSignature = @"
 using System;
 using System.Runtime.InteropServices;
@@ -30,30 +24,19 @@ public class API {
 "@
 Add-Type -TypeDefinition $apiSignature
 
-# ===============================
-# CONFIGURACIÓN
-# ===============================
 $script:LeftBindKey = 0
 $script:RightBindKey = 0
 $script:LeftCPS = 12
 $script:RightCPS = 12
 $script:MinCPS = 1
 $script:MaxCPS = 25
+$script:JitterEnabled = $false
 
-# Variables de tiempo (Stopwatch para precisión milimétrica)
 $script:stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 $script:lastLeftClick = 0
 $script:lastRightClick = 0
 $script:nextLeftDelay = 0
 $script:nextRightDelay = 0
-
-# Flags
-$script:JitterEnabled = $false
-$script:MAGIC = 0 # 0 hace que sea difícil de rastrear como input inyectado
-
-# ===============================
-# LÓGICA DE CLICKS HUMANIZADOS
-# ===============================
 
 function IsKeyDown($k) {
     if($k -eq 0) { return $false }
@@ -68,46 +51,34 @@ function GetKeyName($k) {
     return "K:$k"
 }
 
-# Algoritmo de Variación de CPS (Humanización)
 function GetNextDelay($cps) {
     if ($cps -le 0) { return 1000 }
-    
-    # Base matemática
     $baseMs = 1000.0 / $cps
-    
-    # Variación del 20% (arriba o abajo) para que los CPS no sean fijos
-    # Esto hace que si pones 12, oscile realísticamente.
     $variance = $baseMs * 0.20 
     $random = Get-Random -Minimum (-$variance) -Maximum ($variance)
-    
     return ($baseMs + $random)
 }
 
 function DoLeftClick {
-    # Jitter (Temblor de mira)
     if ($script:JitterEnabled) {
         $jx = (Get-Random -Min -2 -Max 3)
         $jy = (Get-Random -Min -2 -Max 3)
-        [API]::mouse_event([API]::MOUSEEVENTF_MOVE, $jx, $jy, 0, 0)
+        [API]::mouse_event(1, $jx, $jy, 0, 0)
     }
-    # Click
-    [API]::mouse_event([API]::MOUSEEVENTF_LEFTDOWN, 0, 0, 0, $script:MAGIC)
-    [API]::mouse_event([API]::MOUSEEVENTF_LEFTUP, 0, 0, 0, $script:MAGIC)
+    [API]::mouse_event(2, 0, 0, 0, 0)
+    [API]::mouse_event(4, 0, 0, 0, 0)
 }
 
 function DoRightClick {
     if ($script:JitterEnabled) {
         $jx = (Get-Random -Min -2 -Max 3)
         $jy = (Get-Random -Min -2 -Max 3)
-        [API]::mouse_event([API]::MOUSEEVENTF_MOVE, $jx, $jy, 0, 0)
+        [API]::mouse_event(1, $jx, $jy, 0, 0)
     }
-    [API]::mouse_event([API]::MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, $script:MAGIC)
-    [API]::mouse_event([API]::MOUSEEVENTF_RIGHTUP, 0, 0, 0, $script:MAGIC)
+    [API]::mouse_event(8, 0, 0, 0, 0)
+    [API]::mouse_event(16, 0, 0, 0, 0)
 }
 
-# ===============================
-# INTERFAZ GRÁFICA (GUI)
-# ===============================
 $f = New-Object System.Windows.Forms.Form
 $f.Text = "Icon1CClicker"
 $f.Size = New-Object System.Drawing.Size(360,320)
@@ -116,7 +87,6 @@ $f.BackColor = [System.Drawing.Color]::FromArgb(15,15,15)
 $f.FormBorderStyle = 'None'
 $f.ShowInTaskbar = $true
 
-# Drag Window (Mover ventana sin borde)
 $f.Add_MouseDown({
     if($_.Button -eq 'Left' -and $_.Y -lt 40){
         $f.Capture = $true
@@ -132,7 +102,6 @@ $f.Add_MouseMove({
 })
 $f.Add_MouseUp({$f.Capture = $false})
 
-# --- TITULO ---
 $title = New-Object System.Windows.Forms.Label
 $title.Text = "Icon1CClicker"
 $title.ForeColor = [System.Drawing.Color]::White
@@ -141,10 +110,9 @@ $title.Location = New-Object System.Drawing.Point(15,12)
 $title.AutoSize = $true
 $f.Controls.Add($title)
 
-# --- BOTÓN DE DISCORD ---
 $discordBtn = New-Object System.Windows.Forms.Label
 $discordBtn.Text = "Discord"
-$discordBtn.BackColor = [System.Drawing.Color]::FromArgb(88, 101, 242) # Discord Blurple
+$discordBtn.BackColor = [System.Drawing.Color]::FromArgb(88, 101, 242)
 $discordBtn.ForeColor = [System.Drawing.Color]::White
 $discordBtn.Font = New-Object System.Drawing.Font("Segoe UI",9,[System.Drawing.FontStyle]::Bold)
 $discordBtn.TextAlign = "MiddleCenter"
@@ -154,10 +122,8 @@ $discordBtn.Cursor = "Hand"
 $discordBtn.Add_Click({
     [System.Diagnostics.Process]::Start("https://discord.gg/gVbQ3PKK")
 })
-# Simular borde redondeado simple poniendo un panel detrás o dejándolo cuadrado estilo metro
 $f.Controls.Add($discordBtn)
 
-# --- CERRAR (X) ---
 $close = New-Object System.Windows.Forms.Label
 $close.Text = "×"
 $close.Font = New-Object System.Drawing.Font("Arial",20,[System.Drawing.FontStyle]::Bold)
@@ -165,12 +131,9 @@ $close.ForeColor = [System.Drawing.Color]::Gray
 $close.Location = New-Object System.Drawing.Point(325,8)
 $close.Size = New-Object System.Drawing.Size(30,30)
 $close.Cursor = "Hand"
-$close.Add_Click({ $f.Close() }) # Esto activará el evento de limpieza
-$close.Add_MouseEnter({ $close.ForeColor = [System.Drawing.Color]::White })
-$close.Add_MouseLeave({ $close.ForeColor = [System.Drawing.Color]::Gray })
+$close.Add_Click({ $f.Close() })
 $f.Controls.Add($close)
 
-# --- PANEL LEFT CLICK ---
 $lblL = New-Object System.Windows.Forms.Label
 $lblL.Text = "Left Click"
 $lblL.ForeColor = [System.Drawing.Color]::LightGray
@@ -215,7 +178,6 @@ $numL.Location = New-Object System.Drawing.Point(250, 82)
 $numL.Size = New-Object System.Drawing.Size(40,20)
 $f.Controls.Add($numL)
 
-# --- PANEL RIGHT CLICK ---
 $lblR = New-Object System.Windows.Forms.Label
 $lblR.Text = "Right Click"
 $lblR.ForeColor = [System.Drawing.Color]::LightGray
@@ -260,7 +222,6 @@ $numR.Location = New-Object System.Drawing.Point(250, 142)
 $numR.Size = New-Object System.Drawing.Size(40,20)
 $f.Controls.Add($numR)
 
-# --- JITTER CHECKBOX ---
 $cbJitter = New-Object System.Windows.Forms.CheckBox
 $cbJitter.Text = "Jitter Click (Movimiento Random)"
 $cbJitter.ForeColor = [System.Drawing.Color]::White
@@ -270,7 +231,6 @@ $cbJitter.Size = New-Object System.Drawing.Size(300, 24)
 $cbJitter.Add_CheckedChanged({ $script:JitterEnabled = $cbJitter.Checked })
 $f.Controls.Add($cbJitter)
 
-# --- BOTÓN SELF DESTRUCT ---
 $btnDestruct = New-Object System.Windows.Forms.Button
 $btnDestruct.Text = "CERRAR Y LIMPIAR (SELF DESTRUCT)"
 $btnDestruct.BackColor = [System.Drawing.Color]::FromArgb(180, 40, 40)
@@ -284,7 +244,6 @@ $btnDestruct.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawin
 $btnDestruct.Add_Click({ $f.Close() })
 $f.Controls.Add($btnDestruct)
 
-# --- ACTUALIZAR BARRAS ---
 function UpdateUI {
     $ratioL = $script:LeftCPS / $script:MaxCPS
     $barL_Fill.Width = [int](220 * $ratioL)
@@ -307,15 +266,11 @@ $barR_BG.Add_MouseDown({
     UpdateUI
 })
 
-# ===============================
-# BUCLE PRINCIPAL (Optimizado)
-# ===============================
 $mainTimer = New-Object System.Windows.Forms.Timer
-$mainTimer.Interval = 1 # Tick rápido para chequear el cronómetro
+$mainTimer.Interval = 1
 $mainTimer.Add_Tick({
     $currentTime = $script:stopwatch.ElapsedMilliseconds
 
-    # 1. Configurar Tecla (Bind)
     if($script:listenLeft -or $script:listenRight){
         for($i=1; $i -le 190; $i++){
             if(IsKeyDown $i){
@@ -336,17 +291,14 @@ $mainTimer.Add_Tick({
         return
     }
 
-    # 2. Clicker Izquierdo
     if ($script:LeftBindKey -ne 0 -and (IsKeyDown $script:LeftBindKey)) {
         if (($currentTime - $script:lastLeftClick) -ge $script:nextLeftDelay) {
             DoLeftClick
             $script:lastLeftClick = $currentTime
-            # Aquí ocurre la variación de CPS: Se calcula un nuevo delay aleatorio
             $script:nextLeftDelay = GetNextDelay $script:LeftCPS
         }
     }
 
-    # 3. Clicker Derecho
     if ($script:RightBindKey -ne 0 -and (IsKeyDown $script:RightBindKey)) {
         if (($currentTime - $script:lastRightClick) -ge $script:nextRightDelay) {
             DoRightClick
@@ -358,27 +310,16 @@ $mainTimer.Add_Tick({
 
 $mainTimer.Start()
 
-# ===============================
-# LIMPIEZA AL CERRAR (Self Destruct)
-# ===============================
 $f.Add_FormClosing({
     $mainTimer.Stop()
     $script:stopwatch.Stop()
     
-    # 1. Limpiar historial de sesión actual
     try { [Microsoft.PowerShell.PSConsoleReadLine]::ClearHistory() } catch {}
     Clear-History
-    
-    # 2. Intentar borrar archivo persistente de historial de PowerShell
     try {
         $histPath = (Get-PSReadlineOption).HistorySavePath
-        if (Test-Path $histPath) { 
-            Remove-Item $histPath -Force -ErrorAction SilentlyContinue 
-        }
+        if (Test-Path $histPath) { Remove-Item $histPath -Force -ErrorAction SilentlyContinue }
     } catch {}
-
-    # 3. Nota: No se puede borrar el historial de CMD desde un proceso hijo fácilmente,
-    # pero esto limpia las huellas principales de PowerShell.
 })
 
 [System.Windows.Forms.Application]::Run($f)
