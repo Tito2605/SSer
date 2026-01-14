@@ -25,8 +25,8 @@ public class API {
 # ===============================
 # CONFIG
 # ===============================
-$script:LeftBind = 0
-$script:RightBind = 0
+$script:LeftBindKey = 0
+$script:RightBindKey = 0
 $script:LeftCPS = 12
 $script:RightCPS = 12
 $script:MinCPS = 1
@@ -131,22 +131,22 @@ $leftLabel.Location = New-Object System.Drawing.Point(20,55)
 $leftLabel.AutoSize = $true
 $f.Controls.Add($leftLabel)
 
-$leftBindLabel = New-Object System.Windows.Forms.Label
-$leftBindLabel.Text = "none"
-$leftBindLabel.ForeColor = [System.Drawing.Color]::Gray
-$leftBindLabel.BackColor = [System.Drawing.Color]::FromArgb(18,18,18)
-$leftBindLabel.Font = New-Object System.Drawing.Font("Consolas",10,[System.Drawing.FontStyle]::Bold)
-$leftBindLabel.Location = New-Object System.Drawing.Point(100,53)
-$leftBindLabel.Size = New-Object System.Drawing.Size(80,24)
-$leftBindLabel.TextAlign = "MiddleCenter"
-$leftBindLabel.Cursor = "Hand"
+$leftBind = New-Object System.Windows.Forms.Label
+$leftBind.Text = "none"
+$leftBind.ForeColor = [System.Drawing.Color]::Gray
+$leftBind.BackColor = [System.Drawing.Color]::FromArgb(18,18,18)
+$leftBind.Font = New-Object System.Drawing.Font("Consolas",10,[System.Drawing.FontStyle]::Bold)
+$leftBind.Location = New-Object System.Drawing.Point(100,53)
+$leftBind.Size = New-Object System.Drawing.Size(80,24)
+$leftBind.TextAlign = "MiddleCenter"
+$leftBind.Cursor = "Hand"
 $script:listenLeft = $false
-$leftBindLabel.Add_Click({
-    $leftBindLabel.Text = "..."
-    $leftBindLabel.ForeColor = [System.Drawing.Color]::FromArgb(255,100,100)
+$leftBind.Add_Click({
+    $leftBind.Text = "..."
+    $leftBind.ForeColor = [System.Drawing.Color]::FromArgb(255,100,100)
     $script:listenLeft = $true
 })
-$f.Controls.Add($leftBindLabel)
+$f.Controls.Add($leftBind)
 
 $leftBG = New-Object System.Windows.Forms.Panel
 $leftBG.Size = New-Object System.Drawing.Size(220,4)
@@ -193,22 +193,22 @@ $rightLabel.Location = New-Object System.Drawing.Point(20,115)
 $rightLabel.AutoSize = $true
 $f.Controls.Add($rightLabel)
 
-$rightBindLabel = New-Object System.Windows.Forms.Label
-$rightBindLabel.Text = "none"
-$rightBindLabel.ForeColor = [System.Drawing.Color]::Gray
-$rightBindLabel.BackColor = [System.Drawing.Color]::FromArgb(18,18,18)
-$rightBindLabel.Font = New-Object System.Drawing.Font("Consolas",10,[System.Drawing.FontStyle]::Bold)
-$rightBindLabel.Location = New-Object System.Drawing.Point(100,113)
-$rightBindLabel.Size = New-Object System.Drawing.Size(80,24)
-$rightBindLabel.TextAlign = "MiddleCenter"
-$rightBindLabel.Cursor = "Hand"
+$rightBind = New-Object System.Windows.Forms.Label
+$rightBind.Text = "none"
+$rightBind.ForeColor = [System.Drawing.Color]::Gray
+$rightBind.BackColor = [System.Drawing.Color]::FromArgb(18,18,18)
+$rightBind.Font = New-Object System.Drawing.Font("Consolas",10,[System.Drawing.FontStyle]::Bold)
+$rightBind.Location = New-Object System.Drawing.Point(100,113)
+$rightBind.Size = New-Object System.Drawing.Size(80,24)
+$rightBind.TextAlign = "MiddleCenter"
+$rightBind.Cursor = "Hand"
 $script:listenRight = $false
-$rightBindLabel.Add_Click({
-    $rightBindLabel.Text = "..."
-    $rightBindLabel.ForeColor = [System.Drawing.Color]::FromArgb(255,100,100)
+$rightBind.Add_Click({
+    $rightBind.Text = "..."
+    $rightBind.ForeColor = [System.Drawing.Color]::FromArgb(255,100,100)
     $script:listenRight = $true
 })
-$f.Controls.Add($rightBindLabel)
+$f.Controls.Add($rightBind)
 
 $rightBG = New-Object System.Windows.Forms.Panel
 $rightBG.Size = New-Object System.Drawing.Size(220,4)
@@ -281,11 +281,11 @@ $MON.Add_Tick({
         1..254|%{
             if(IsKeyDown $_){
                 if($_ -eq 27){
-                    $script:LeftBind = 0
+                    $script:LeftBindKey = 0
                     $leftBind.Text = "none"
                     $leftBind.ForeColor = [System.Drawing.Color]::Gray
                 } else {
-                    $script:LeftBind = $_
+                    $script:LeftBindKey = $_
                     $leftBind.Text = GetKeyName $_
                     $leftBind.ForeColor = [System.Drawing.Color]::White
                 }
@@ -300,11 +300,11 @@ $MON.Add_Tick({
         1..254|%{
             if(IsKeyDown $_){
                 if($_ -eq 27){
-                    $script:RightBind = 0
+                    $script:RightBindKey = 0
                     $rightBind.Text = "none"
                     $rightBind.ForeColor = [System.Drawing.Color]::Gray
                 } else {
-                    $script:RightBind = $_
+                    $script:RightBindKey = $_
                     $rightBind.Text = GetKeyName $_
                     $rightBind.ForeColor = [System.Drawing.Color]::White
                 }
@@ -316,7 +316,7 @@ $MON.Add_Tick({
     }
     
     # Left clicker
-    $leftPressed = IsKeyDown $script:LeftBind
+    $leftPressed = IsKeyDown $script:LeftBindKey
     if($leftPressed -and -not $script:leftClickerActive){
         $script:leftClickerActive = $true
         $LT.Interval = CPSDelay $script:LeftCPS
@@ -328,7 +328,7 @@ $MON.Add_Tick({
     }
     
     # Right clicker
-    $rightPressed = IsKeyDown $script:RightBind
+    $rightPressed = IsKeyDown $script:RightBindKey
     if($rightPressed -and -not $script:rightClickerActive){
         $script:rightClickerActive = $true
         $RT.Interval = CPSDelay $script:RightCPS
