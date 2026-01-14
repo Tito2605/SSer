@@ -1,5 +1,5 @@
 # ===============================
-# FORZAR STA
+# FORZAR STA (Necesario para GUI)
 # ===============================
 if ($host.Runspace.ApartmentState -ne "STA") {
     powershell -STA -ExecutionPolicy Bypass -File $PSCommandPath
@@ -10,77 +10,134 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
 # ===============================
-# API
+# API DE WINDOWS (USER32)
 # ===============================
-Add-Type @"
+$apiSignature = @"
 using System;
 using System.Runtime.InteropServices;
+using System.Diagnostics;
+
 public class API {
     [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int vKey);
-    [DllImport("user32.dll")] public static extern void mouse_event(int a, int b, int c, int d, int e);
-    [DllImport("user32.dll")] public static extern IntPtr GetMessageExtraInfo();
+    [DllImport("user32.dll")] public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);
+    
+    // Constantes de Mouse
+    public const int MOUSEEVENTF_MOVE       = 0x0001;
+    public const int MOUSEEVENTF_LEFTDOWN   = 0x0002;
+    public const int MOUSEEVENTF_LEFTUP     = 0x0004;
+    public const int MOUSEEVENTF_RIGHTDOWN  = 0x0008;
+    public const int MOUSEEVENTF_RIGHTUP    = 0x0010;
 }
 "@
+Add-Type -TypeDefinition $apiSignature
 
 # ===============================
-# CONFIG
+# CONFIGURACIÓN Y ESTADO
 # ===============================
 $script:LeftBindKey = 0
 $script:RightBindKey = 0
 $script:LeftCPS = 12
 $script:RightCPS = 12
 $script:MinCPS = 1
-$script:MaxCPS = 25
+$script:MaxCPS = 25 # Puedes subir esto si quieres más velocidad
 
-# Variables internas para evitar loops
-$script:leftClickerActive = $false
-$script:rightClickerActive = $false
-$script:MAGIC = 0x1C0F1C
+# Control de tiempos
+$script:stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+$script:lastLeftClick = 0
+$script:lastRightClick = 0
+$script:nextLeftDelay = 0
+$script:nextRightDelay = 0
+
+# Contadores para "Real CPS"
+$script:leftClicksLog = New-Object System.Collections.Generic.List[long]
+$script:rightClicksLog = New-Object System.Collections.Generic.List[long]
+
+# Flags
+$script:JitterEnabled = $false
+$script:MAGIC = 0 # Extra info (0 es indetectable estándar)
 
 # ===============================
-# FUNCIONES
+# FUNCIONES LÓGICAS
 # ===============================
+
 function IsKeyDown($k) {
     if($k -eq 0) { return $false }
     return (([API]::GetAsyncKeyState($k) -band 0x8000) -ne 0)
 }
 
 function GetKeyName($k) {
-    $names = @{0="none";1="LMB";2="RMB";4="MMB";5="MB4";6="MB5";32="Space";16="Shift";17="Ctrl";18="Alt"}
+    $names = @{0="...";1="LMB";2="RMB";4="MMB";5="MB4";6="MB5";32="Space";16="Shift";17="Ctrl";18="Alt"}
     65..90|%{$names[$_]=[char]$_}
-    112..117|%{$names[$_]="F"+($_-111)}
+    112..123|%{$names[$_]="F"+($_-111)} # F1-F12
     if($names[$k]){return $names[$k]}
-    "Key"
+    return "Key:$k"
 }
 
-function CPSDelay($cps) {
-    $base = 1000.0 / $cps
-    $jitter = Get-Random -Minimum (-$base * 0.12) -Maximum ($base * 0.12)
-    return [Math]::Max(1, [int]($base + $jitter))
+# Calcula el retraso basado en CPS + Aleatoriedad
+function GetNextDelay($cps) {
+    if ($cps -le 0) { return 1000 }
+    $baseMs = 1000.0 / $cps
+    # Variación del 15% para humanizar
+    $variance = $baseMs * 0.15 
+    $random = Get-Random -Minimum (-$variance) -Maximum ($variance)
+    return ($baseMs + $random)
 }
 
-function LeftClick {
-    [API]::mouse_event(2,0,0,0,$script:MAGIC)
-    [API]::mouse_event(4,0,0,0,$script:MAGIC)
+function DoLeftClick {
+    # Jitter (Movimiento)
+    if ($script:JitterEnabled) {
+        $jx = (Get-Random -Min -2 -Max 3)
+        $jy = (Get-Random -Min -2 -Max 3)
+        [API]::mouse_event([API]::MOUSEEVENTF_MOVE, $jx, $jy, 0, 0)
+    }
+    # Click
+    [API]::mouse_event([API]::MOUSEEVENTF_LEFTDOWN, 0, 0, 0, $script:MAGIC)
+    [API]::mouse_event([API]::MOUSEEVENTF_LEFTUP, 0, 0, 0, $script:MAGIC)
+    
+    # Registrar tiempo para Real CPS
+    $script:leftClicksLog.Add($script:stopwatch.ElapsedMilliseconds)
 }
 
-function RightClick {
-    [API]::mouse_event(8,0,0,0,$script:MAGIC)
-    [API]::mouse_event(16,0,0,0,$script:MAGIC)
+function DoRightClick {
+    if ($script:JitterEnabled) {
+        $jx = (Get-Random -Min -2 -Max 3)
+        $jy = (Get-Random -Min -2 -Max 3)
+        [API]::mouse_event([API]::MOUSEEVENTF_MOVE, $jx, $jy, 0, 0)
+    }
+    [API]::mouse_event([API]::MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, $script:MAGIC)
+    [API]::mouse_event([API]::MOUSEEVENTF_RIGHTUP, 0, 0, 0, $script:MAGIC)
+    
+    $script:rightClicksLog.Add($script:stopwatch.ElapsedMilliseconds)
+}
+
+function UpdateRealCPS {
+    $now = $script:stopwatch.ElapsedMilliseconds
+    $threshold = $now - 1000
+    
+    # Limpiar registros viejos (> 1 seg)
+    while ($script:leftClicksLog.Count -gt 0 -and $script:leftClicksLog[0] -lt $threshold) {
+        $script:leftClicksLog.RemoveAt(0)
+    }
+    while ($script:rightClicksLog.Count -gt 0 -and $script:rightClicksLog[0] -lt $threshold) {
+        $script:rightClicksLog.RemoveAt(0)
+    }
+    
+    $script:lblRealLeft.Text = "Real: " + $script:leftClicksLog.Count + " cps"
+    $script:lblRealRight.Text = "Real: " + $script:rightClicksLog.Count + " cps"
 }
 
 # ===============================
-# FORM
+# GUI (FORM)
 # ===============================
 $f = New-Object System.Windows.Forms.Form
-$f.Text = "Icon1CClicker"
-$f.Size = New-Object System.Drawing.Size(360,250)
+$f.Text = "PowerClicker Optimized"
+$f.Size = New-Object System.Drawing.Size(380,310)
 $f.StartPosition = 'CenterScreen'
-$f.BackColor = [System.Drawing.Color]::FromArgb(18,18,18)
+$f.BackColor = [System.Drawing.Color]::FromArgb(20,20,20)
 $f.FormBorderStyle = 'None'
 $f.ShowInTaskbar = $true
 
-# Drag simple
+# --- Drag Window Logic ---
 $f.Add_MouseDown({
     if($_.Button -eq 'Left' -and $_.Y -lt 40){
         $f.Capture = $true
@@ -90,261 +147,251 @@ $f.Add_MouseDown({
 })
 $f.Add_MouseMove({
     if($f.Capture){
-        $x = [System.Windows.Forms.Cursor]::Position.X - $script:dragX
-        $y = [System.Windows.Forms.Cursor]::Position.Y - $script:dragY
-        $f.Location = New-Object System.Drawing.Point($x,$y)
+        $p = [System.Windows.Forms.Cursor]::Position
+        $f.Location = New-Object System.Drawing.Point(($p.X - $script:dragX), ($p.Y - $script:dragY))
     }
 })
 $f.Add_MouseUp({$f.Capture = $false})
 
-# ===============================
-# TITLE
-# ===============================
+# --- UI Elements ---
 $title = New-Object System.Windows.Forms.Label
-$title.Text = "Icon1CClicker"
-$title.ForeColor = [System.Drawing.Color]::White
+$title.Text = "⚡ PowerClicker"
+$title.ForeColor = [System.Drawing.Color]::FromArgb(100,149,237)
 $title.Font = New-Object System.Drawing.Font("Segoe UI",14,[System.Drawing.FontStyle]::Bold)
 $title.Location = New-Object System.Drawing.Point(15,12)
 $title.AutoSize = $true
 $f.Controls.Add($title)
 
-# Close
 $close = New-Object System.Windows.Forms.Label
 $close.Text = "×"
 $close.Font = New-Object System.Drawing.Font("Arial",20,[System.Drawing.FontStyle]::Bold)
 $close.ForeColor = [System.Drawing.Color]::White
-$close.Location = New-Object System.Drawing.Point(325,8)
+$close.Location = New-Object System.Drawing.Point(340,8)
 $close.Size = New-Object System.Drawing.Size(30,30)
-$close.TextAlign = "MiddleCenter"
 $close.Cursor = "Hand"
 $close.Add_Click({ $f.Close() })
 $f.Controls.Add($close)
 
-# ===============================
-# LEFT CLICK
-# ===============================
-$leftLabel = New-Object System.Windows.Forms.Label
-$leftLabel.Text = "Left click"
-$leftLabel.ForeColor = [System.Drawing.Color]::FromArgb(140,140,140)
-$leftLabel.Font = New-Object System.Drawing.Font("Segoe UI",9)
-$leftLabel.Location = New-Object System.Drawing.Point(20,55)
-$leftLabel.AutoSize = $true
-$f.Controls.Add($leftLabel)
+# --- LEFT CLICK SECTION ---
+$grpLeft = New-Object System.Windows.Forms.Panel
+$grpLeft.Location = New-Object System.Drawing.Point(20, 60)
+$grpLeft.Size = New-Object System.Drawing.Size(340, 70)
+$f.Controls.Add($grpLeft)
 
-$leftBind = New-Object System.Windows.Forms.Label
-$leftBind.Text = "none"
-$leftBind.ForeColor = [System.Drawing.Color]::Gray
-$leftBind.BackColor = [System.Drawing.Color]::FromArgb(18,18,18)
-$leftBind.Font = New-Object System.Drawing.Font("Consolas",10,[System.Drawing.FontStyle]::Bold)
-$leftBind.Location = New-Object System.Drawing.Point(100,53)
-$leftBind.Size = New-Object System.Drawing.Size(80,24)
-$leftBind.TextAlign = "MiddleCenter"
-$leftBind.Cursor = "Hand"
+$lblL = New-Object System.Windows.Forms.Label
+$lblL.Text = "Left Click"
+$lblL.ForeColor = [System.Drawing.Color]::LightGray
+$lblL.Location = New-Object System.Drawing.Point(0,0)
+$lblL.AutoSize = $true
+$grpLeft.Controls.Add($lblL)
+
+$bindL = New-Object System.Windows.Forms.Label
+$bindL.Text = "NONE"
+$bindL.ForeColor = [System.Drawing.Color]::Gray
+$bindL.BackColor = [System.Drawing.Color]::FromArgb(30,30,30)
+$bindL.Font = New-Object System.Drawing.Font("Consolas",10,[System.Drawing.FontStyle]::Bold)
+$bindL.Location = New-Object System.Drawing.Point(80, -3)
+$bindL.Size = New-Object System.Drawing.Size(80,24)
+$bindL.TextAlign = "MiddleCenter"
+$bindL.Cursor = "Hand"
 $script:listenLeft = $false
-$leftBind.Add_Click({
-    $leftBind.Text = "..."
-    $leftBind.ForeColor = [System.Drawing.Color]::FromArgb(255,100,100)
+$bindL.Add_Click({
+    $bindL.Text = "?"
+    $bindL.ForeColor = [System.Drawing.Color]::Yellow
     $script:listenLeft = $true
 })
-$f.Controls.Add($leftBind)
+$grpLeft.Controls.Add($bindL)
 
-$leftBG = New-Object System.Windows.Forms.Panel
-$leftBG.Size = New-Object System.Drawing.Size(220,4)
-$leftBG.Location = New-Object System.Drawing.Point(20,85)
-$leftBG.BackColor = [System.Drawing.Color]::FromArgb(45,45,45)
-$f.Controls.Add($leftBG)
+$barL_BG = New-Object System.Windows.Forms.Panel
+$barL_BG.Size = New-Object System.Drawing.Size(240,4)
+$barL_BG.Location = New-Object System.Drawing.Point(0,35)
+$barL_BG.BackColor = [System.Drawing.Color]::FromArgb(45,45,45)
+$grpLeft.Controls.Add($barL_BG)
 
-$leftFill = New-Object System.Windows.Forms.Panel
-$leftFill.Size = New-Object System.Drawing.Size(105,4)
-$leftFill.Location = New-Object System.Drawing.Point(0,0)
-$leftFill.BackColor = [System.Drawing.Color]::FromArgb(88,101,242)
-$leftBG.Controls.Add($leftFill)
+$barL_Fill = New-Object System.Windows.Forms.Panel
+$barL_Fill.Size = New-Object System.Drawing.Size(10,4)
+$barL_Fill.BackColor = [System.Drawing.Color]::FromArgb(100,149,237)
+$barL_BG.Controls.Add($barL_Fill)
 
-$leftNum = New-Object System.Windows.Forms.Label
-$leftNum.Text = "12"
-$leftNum.ForeColor = [System.Drawing.Color]::White
-$leftNum.Font = New-Object System.Drawing.Font("Segoe UI",10,[System.Drawing.FontStyle]::Bold)
-$leftNum.Location = New-Object System.Drawing.Point(250,79)
-$leftNum.Size = New-Object System.Drawing.Size(30,20)
-$leftNum.TextAlign = "MiddleRight"
-$f.Controls.Add($leftNum)
+$numL = New-Object System.Windows.Forms.Label
+$numL.Text = "12"
+$numL.ForeColor = [System.Drawing.Color]::White
+$numL.Font = New-Object System.Drawing.Font("Segoe UI",11,[System.Drawing.FontStyle]::Bold)
+$numL.Location = New-Object System.Drawing.Point(250, 25)
+$numL.Size = New-Object System.Drawing.Size(40,25)
+$grpLeft.Controls.Add($numL)
 
-function UpdateLeftBar {
-    $ratio = $script:LeftCPS / $script:MaxCPS
-    $leftFill.Width = [int](220 * $ratio)
-    $leftNum.Text = $script:LeftCPS.ToString()
-}
-UpdateLeftBar
+$script:lblRealLeft = New-Object System.Windows.Forms.Label
+$script:lblRealLeft.Text = "Real: 0 cps"
+$script:lblRealLeft.ForeColor = [System.Drawing.Color]::FromArgb(100,100,100)
+$script:lblRealLeft.Font = New-Object System.Drawing.Font("Segoe UI", 7)
+$script:lblRealLeft.Location = New-Object System.Drawing.Point(250, 48)
+$script:lblRealLeft.AutoSize = $true
+$grpLeft.Controls.Add($script:lblRealLeft)
 
-$leftBG.Add_MouseDown({
-    if($_.Button -eq 'Left' -and $script:LeftCPS -lt $script:MaxCPS){ $script:LeftCPS++ }
-    if($_.Button -eq 'Right' -and $script:LeftCPS -gt $script:MinCPS){ $script:LeftCPS-- }
-    UpdateLeftBar
-})
+# --- RIGHT CLICK SECTION ---
+$grpRight = New-Object System.Windows.Forms.Panel
+$grpRight.Location = New-Object System.Drawing.Point(20, 140)
+$grpRight.Size = New-Object System.Drawing.Size(340, 70)
+$f.Controls.Add($grpRight)
 
-# ===============================
-# RIGHT CLICK
-# ===============================
-$rightLabel = New-Object System.Windows.Forms.Label
-$rightLabel.Text = "Right click"
-$rightLabel.ForeColor = [System.Drawing.Color]::FromArgb(140,140,140)
-$rightLabel.Font = New-Object System.Drawing.Font("Segoe UI",9)
-$rightLabel.Location = New-Object System.Drawing.Point(20,115)
-$rightLabel.AutoSize = $true
-$f.Controls.Add($rightLabel)
+$lblR = New-Object System.Windows.Forms.Label
+$lblR.Text = "Right Click"
+$lblR.ForeColor = [System.Drawing.Color]::LightGray
+$lblR.Location = New-Object System.Drawing.Point(0,0)
+$lblR.AutoSize = $true
+$grpRight.Controls.Add($lblR)
 
-$rightBind = New-Object System.Windows.Forms.Label
-$rightBind.Text = "none"
-$rightBind.ForeColor = [System.Drawing.Color]::Gray
-$rightBind.BackColor = [System.Drawing.Color]::FromArgb(18,18,18)
-$rightBind.Font = New-Object System.Drawing.Font("Consolas",10,[System.Drawing.FontStyle]::Bold)
-$rightBind.Location = New-Object System.Drawing.Point(100,113)
-$rightBind.Size = New-Object System.Drawing.Size(80,24)
-$rightBind.TextAlign = "MiddleCenter"
-$rightBind.Cursor = "Hand"
+$bindR = New-Object System.Windows.Forms.Label
+$bindR.Text = "NONE"
+$bindR.ForeColor = [System.Drawing.Color]::Gray
+$bindR.BackColor = [System.Drawing.Color]::FromArgb(30,30,30)
+$bindR.Font = New-Object System.Drawing.Font("Consolas",10,[System.Drawing.FontStyle]::Bold)
+$bindR.Location = New-Object System.Drawing.Point(80, -3)
+$bindR.Size = New-Object System.Drawing.Size(80,24)
+$bindR.TextAlign = "MiddleCenter"
+$bindR.Cursor = "Hand"
 $script:listenRight = $false
-$rightBind.Add_Click({
-    $rightBind.Text = "..."
-    $rightBind.ForeColor = [System.Drawing.Color]::FromArgb(255,100,100)
+$bindR.Add_Click({
+    $bindR.Text = "?"
+    $bindR.ForeColor = [System.Drawing.Color]::Yellow
     $script:listenRight = $true
 })
-$f.Controls.Add($rightBind)
+$grpRight.Controls.Add($bindR)
 
-$rightBG = New-Object System.Windows.Forms.Panel
-$rightBG.Size = New-Object System.Drawing.Size(220,4)
-$rightBG.Location = New-Object System.Drawing.Point(20,145)
-$rightBG.BackColor = [System.Drawing.Color]::FromArgb(45,45,45)
-$f.Controls.Add($rightBG)
+$barR_BG = New-Object System.Windows.Forms.Panel
+$barR_BG.Size = New-Object System.Drawing.Size(240,4)
+$barR_BG.Location = New-Object System.Drawing.Point(0,35)
+$barR_BG.BackColor = [System.Drawing.Color]::FromArgb(45,45,45)
+$grpRight.Controls.Add($barR_BG)
 
-$rightFill = New-Object System.Windows.Forms.Panel
-$rightFill.Size = New-Object System.Drawing.Size(105,4)
-$rightFill.Location = New-Object System.Drawing.Point(0,0)
-$rightFill.BackColor = [System.Drawing.Color]::FromArgb(88,101,242)
-$rightBG.Controls.Add($rightFill)
+$barR_Fill = New-Object System.Windows.Forms.Panel
+$barR_Fill.Size = New-Object System.Drawing.Size(10,4)
+$barR_Fill.BackColor = [System.Drawing.Color]::FromArgb(237,100,100)
+$barR_BG.Controls.Add($barR_Fill)
 
-$rightNum = New-Object System.Windows.Forms.Label
-$rightNum.Text = "12"
-$rightNum.ForeColor = [System.Drawing.Color]::White
-$rightNum.Font = New-Object System.Drawing.Font("Segoe UI",10,[System.Drawing.FontStyle]::Bold)
-$rightNum.Location = New-Object System.Drawing.Point(250,139)
-$rightNum.Size = New-Object System.Drawing.Size(30,20)
-$rightNum.TextAlign = "MiddleRight"
-$f.Controls.Add($rightNum)
+$numR = New-Object System.Windows.Forms.Label
+$numR.Text = "12"
+$numR.ForeColor = [System.Drawing.Color]::White
+$numR.Font = New-Object System.Drawing.Font("Segoe UI",11,[System.Drawing.FontStyle]::Bold)
+$numR.Location = New-Object System.Drawing.Point(250, 25)
+$numR.Size = New-Object System.Drawing.Size(40,25)
+$grpRight.Controls.Add($numR)
 
-function UpdateRightBar {
-    $ratio = $script:RightCPS / $script:MaxCPS
-    $rightFill.Width = [int](220 * $ratio)
-    $rightNum.Text = $script:RightCPS.ToString()
+$script:lblRealRight = New-Object System.Windows.Forms.Label
+$script:lblRealRight.Text = "Real: 0 cps"
+$script:lblRealRight.ForeColor = [System.Drawing.Color]::FromArgb(100,100,100)
+$script:lblRealRight.Font = New-Object System.Drawing.Font("Segoe UI", 7)
+$script:lblRealRight.Location = New-Object System.Drawing.Point(250, 48)
+$script:lblRealRight.AutoSize = $true
+$grpRight.Controls.Add($script:lblRealRight)
+
+# --- JITTER & UTILS ---
+$cbJitter = New-Object System.Windows.Forms.CheckBox
+$cbJitter.Text = "Enable Jitter (Anti-Cheat / Aim Shake)"
+$cbJitter.ForeColor = [System.Drawing.Color]::White
+$cbJitter.Location = New-Object System.Drawing.Point(20, 220)
+$cbJitter.AutoSize = $true
+$cbJitter.Add_CheckedChanged({ $script:JitterEnabled = $cbJitter.Checked })
+$f.Controls.Add($cbJitter)
+
+$btnExit = New-Object System.Windows.Forms.Button
+$btnExit.Text = "CERRAR COMPLETAMENTE"
+$btnExit.BackColor = [System.Drawing.Color]::FromArgb(150,30,30)
+$btnExit.ForeColor = [System.Drawing.Color]::White
+$btnExit.FlatStyle = "Flat"
+$btnExit.FlatAppearance.BorderSize = 0
+$btnExit.Location = New-Object System.Drawing.Point(20, 260)
+$btnExit.Size = New-Object System.Drawing.Size(340,30)
+$btnExit.Cursor = "Hand"
+$btnExit.Add_Click({ $f.Close() })
+$f.Controls.Add($btnExit)
+
+# --- LOGIC UPDATERS ---
+function UpdateUI {
+    # Left
+    $ratioL = $script:LeftCPS / $script:MaxCPS
+    $barL_Fill.Width = [int](240 * $ratioL)
+    $numL.Text = $script:LeftCPS.ToString()
+    
+    # Right
+    $ratioR = $script:RightCPS / $script:MaxCPS
+    $barR_Fill.Width = [int](240 * $ratioR)
+    $numR.Text = $script:RightCPS.ToString()
 }
-UpdateRightBar
+UpdateUI
 
-$rightBG.Add_MouseDown({
+# Click en barra izquierda para cambiar CPS
+$barL_BG.Add_MouseDown({
+    if($_.Button -eq 'Left' -and $script:LeftCPS -lt $script:MaxCPS){ $script:LeftCPS++ }
+    if($_.Button -eq 'Right' -and $script:LeftCPS -gt $script:MinCPS){ $script:LeftCPS-- }
+    UpdateUI
+})
+# Click en barra derecha
+$barR_BG.Add_MouseDown({
     if($_.Button -eq 'Left' -and $script:RightCPS -lt $script:MaxCPS){ $script:RightCPS++ }
     if($_.Button -eq 'Right' -and $script:RightCPS -gt $script:MinCPS){ $script:RightCPS-- }
-    UpdateRightBar
+    UpdateUI
 })
-
-# Self Destruct
-$sd = New-Object System.Windows.Forms.Button
-$sd.Text = "SELF DESTRUCT"
-$sd.BackColor = [System.Drawing.Color]::FromArgb(120,25,25)
-$sd.ForeColor = [System.Drawing.Color]::FromArgb(255,120,120)
-$sd.FlatStyle = "Flat"
-$sd.FlatAppearance.BorderSize = 0
-$sd.Location = New-Object System.Drawing.Point(20,185)
-$sd.Size = New-Object System.Drawing.Size(320,30)
-$sd.Font = New-Object System.Drawing.Font("Segoe UI",9,[System.Drawing.FontStyle]::Bold)
-$sd.Cursor = "Hand"
-$sd.Add_Click({ $f.Close() })
-$f.Controls.Add($sd)
 
 # ===============================
-# TIMERS
+# MAIN LOOP (GAME LOOP)
 # ===============================
-$LT = New-Object System.Windows.Forms.Timer
-$LT.Add_Tick({
-    LeftClick
-    $LT.Interval = CPSDelay $script:LeftCPS
-})
+$mainTimer = New-Object System.Windows.Forms.Timer
+$mainTimer.Interval = 1 # Intentar correr lo más rápido posible (aprox 15ms reales)
+$mainTimer.Add_Tick({
+    $currentTime = $script:stopwatch.ElapsedMilliseconds
 
-$RT = New-Object System.Windows.Forms.Timer
-$RT.Add_Tick({
-    RightClick
-    $RT.Interval = CPSDelay $script:RightCPS
-})
-
-$MON = New-Object System.Windows.Forms.Timer
-$MON.Interval = 8
-$MON.Add_Tick({
-    # Listen for keys
-    if($script:listenLeft){
-        1..254|%{
-            if(IsKeyDown $_){
-                if($_ -eq 27){
-                    $script:LeftBindKey = 0
-                    $leftBind.Text = "none"
-                    $leftBind.ForeColor = [System.Drawing.Color]::Gray
-                } else {
-                    $script:LeftBindKey = $_
-                    $leftBind.Text = GetKeyName $_
-                    $leftBind.ForeColor = [System.Drawing.Color]::White
+    # 1. Escuchar teclas para Binding
+    if($script:listenLeft -or $script:listenRight){
+        for($i=1; $i -le 190; $i++){
+            if(IsKeyDown $i){
+                if($script:listenLeft){
+                    if($i -eq 27) { $script:LeftBindKey=0; $bindL.Text="NONE"; $bindL.ForeColor=[System.Drawing.Color]::Gray }
+                    else { $script:LeftBindKey=$i; $bindL.Text=GetKeyName $i; $bindL.ForeColor=[System.Drawing.Color]::White }
+                    $script:listenLeft = $false
                 }
-                $script:listenLeft = $false
-                Start-Sleep -m 200
+                elseif($script:listenRight){
+                    if($i -eq 27) { $script:RightBindKey=0; $bindR.Text="NONE"; $bindR.ForeColor=[System.Drawing.Color]::Gray }
+                    else { $script:RightBindKey=$i; $bindR.Text=GetKeyName $i; $bindR.ForeColor=[System.Drawing.Color]::White }
+                    $script:listenRight = $false
+                }
+                Start-Sleep -m 150 # Evitar doble registro
                 return
             }
         }
+        return # Si estamos escuchando bind, no clickear
     }
-    
-    if($script:listenRight){
-        1..254|%{
-            if(IsKeyDown $_){
-                if($_ -eq 27){
-                    $script:RightBindKey = 0
-                    $rightBind.Text = "none"
-                    $rightBind.ForeColor = [System.Drawing.Color]::Gray
-                } else {
-                    $script:RightBindKey = $_
-                    $rightBind.Text = GetKeyName $_
-                    $rightBind.ForeColor = [System.Drawing.Color]::White
-                }
-                $script:listenRight = $false
-                Start-Sleep -m 200
-                return
-            }
+
+    # 2. Lógica de Click Izquierdo
+    if ($script:LeftBindKey -ne 0 -and (IsKeyDown $script:LeftBindKey)) {
+        if (($currentTime - $script:lastLeftClick) -ge $script:nextLeftDelay) {
+            DoLeftClick
+            $script:lastLeftClick = $currentTime
+            $script:nextLeftDelay = GetNextDelay $script:LeftCPS
+        }
+    }
+
+    # 3. Lógica de Click Derecho
+    if ($script:RightBindKey -ne 0 -and (IsKeyDown $script:RightBindKey)) {
+        if (($currentTime - $script:lastRightClick) -ge $script:nextRightDelay) {
+            DoRightClick
+            $script:lastRightClick = $currentTime
+            $script:nextRightDelay = GetNextDelay $script:RightCPS
         }
     }
     
-    # Left clicker
-    $leftPressed = IsKeyDown $script:LeftBindKey
-    if($leftPressed -and -not $script:leftClickerActive){
-        $script:leftClickerActive = $true
-        $LT.Interval = CPSDelay $script:LeftCPS
-        $LT.Start()
-    }
-    elseif(-not $leftPressed -and $script:leftClickerActive){
-        $script:leftClickerActive = $false
-        $LT.Stop()
-    }
-    
-    # Right clicker
-    $rightPressed = IsKeyDown $script:RightBindKey
-    if($rightPressed -and -not $script:rightClickerActive){
-        $script:rightClickerActive = $true
-        $RT.Interval = CPSDelay $script:RightCPS
-        $RT.Start()
-    }
-    elseif(-not $rightPressed -and $script:rightClickerActive){
-        $script:rightClickerActive = $false
-        $RT.Stop()
+    # 4. Actualizar etiquetas de Real CPS (cada ~100ms para no laggear UI)
+    if ($currentTime % 10 -lt 2) {
+        UpdateRealCPS
     }
 })
-$MON.Start()
+
+$mainTimer.Start()
 
 $f.Add_FormClosing({
-    $LT.Stop()
-    $RT.Stop()
-    $MON.Stop()
+    $mainTimer.Stop()
+    $script:stopwatch.Stop()
 })
 
 [System.Windows.Forms.Application]::Run($f)
