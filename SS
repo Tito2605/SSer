@@ -14,9 +14,14 @@ public class API {
     [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int vKey);
     [DllImport("user32.dll")] public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);
     [DllImport("user32.dll")] public static extern bool SetWindowDisplayAffinity(IntPtr hWnd, uint dwAffinity);
+    [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+    [DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow();
 }
 "@
 Add-Type -TypeDefinition $apiSignature
+
+$consoleHandle = [API]::GetConsoleWindow()
+[API]::ShowWindow($consoleHandle, 0)
 
 $script:LeftBindKey = 0
 $script:RightBindKey = 0
@@ -49,9 +54,8 @@ function GetKeyName($k) {
 
 function GetNextDelay($cps) {
     if ($cps -le 0) { return 1000 }
-    $variation = (Get-Random -Minimum -1.5 -Maximum 1.5)
-    $effectiveCPS = $cps + $variation
-    return 1000.0 / $effectiveCPS
+    $v = (Get-Random -Minimum -1.5 -Maximum 1.5)
+    return 1000.0 / ($cps + $v)
 }
 
 function DoLeftClick {
@@ -59,7 +63,7 @@ function DoLeftClick {
         [API]::mouse_event(0x0001, (Get-Random -Min -1 -Max 2), (Get-Random -Min -1 -Max 2), 0, 0)
     }
     [API]::mouse_event(0x0002, 0, 0, 0, 0)
-    [System.Threading.Thread]::Sleep(7)
+    [System.Threading.Thread]::Sleep(6)
     [API]::mouse_event(0x0004, 0, 0, 0, 0)
 }
 
@@ -68,7 +72,7 @@ function DoRightClick {
         [API]::mouse_event(0x0001, (Get-Random -Min -1 -Max 2), (Get-Random -Min -1 -Max 2), 0, 0)
     }
     [API]::mouse_event(0x0008, 0, 0, 0, 0)
-    [System.Threading.Thread]::Sleep(7)
+    [System.Threading.Thread]::Sleep(6)
     [API]::mouse_event(0x0010, 0, 0, 0, 0)
 }
 
@@ -78,6 +82,8 @@ $f.Size = New-Object System.Drawing.Size(360,320)
 $f.StartPosition = 'CenterScreen'
 $f.BackColor = [System.Drawing.Color]::FromArgb(15,15,15)
 $f.FormBorderStyle = 'None'
+$f.ShowInTaskbar = $false
+$f.TopMost = $false
 
 $f.Add_Load({
     [API]::SetWindowDisplayAffinity($f.Handle, 0x00000011)
@@ -149,14 +155,15 @@ $bindL.Add_Click({ $bindL.Text="..."; $script:listenLeft=$true })
 $f.Controls.Add($bindL)
 
 $barL_BG = New-Object System.Windows.Forms.Panel
-$barL_BG.Size = New-Object System.Drawing.Size(220,10)
+$barL_BG.Size = New-Object System.Drawing.Size(220,12)
 $barL_BG.Location = New-Object System.Drawing.Point(20,100)
 $barL_BG.BackColor = [System.Drawing.Color]::FromArgb(35,35,35)
 $f.Controls.Add($barL_BG)
 
 $barL_Fill = New-Object System.Windows.Forms.Panel
-$barL_Fill.Size = New-Object System.Drawing.Size(10,10)
+$barL_Fill.Size = New-Object System.Drawing.Size(10,12)
 $barL_Fill.BackColor = [System.Drawing.Color]::FromArgb(88, 101, 242)
+$barL_Fill.Enabled = $false
 $barL_BG.Controls.Add($barL_Fill)
 
 $numL = New-Object System.Windows.Forms.Label
@@ -188,14 +195,15 @@ $bindR.Add_Click({ $bindR.Text="..."; $script:listenRight=$true })
 $f.Controls.Add($bindR)
 
 $barR_BG = New-Object System.Windows.Forms.Panel
-$barR_BG.Size = New-Object System.Drawing.Size(220,10)
+$barR_BG.Size = New-Object System.Drawing.Size(220,12)
 $barR_BG.Location = New-Object System.Drawing.Point(20,170)
 $barR_BG.BackColor = [System.Drawing.Color]::FromArgb(35,35,35)
 $f.Controls.Add($barR_BG)
 
 $barR_Fill = New-Object System.Windows.Forms.Panel
-$barR_Fill.Size = New-Object System.Drawing.Size(10,10)
+$barR_Fill.Size = New-Object System.Drawing.Size(10,12)
 $barR_Fill.BackColor = [System.Drawing.Color]::FromArgb(235, 69, 158)
+$barR_Fill.Enabled = $false
 $barR_BG.Controls.Add($barR_Fill)
 
 $numR = New-Object System.Windows.Forms.Label
@@ -232,25 +240,23 @@ function UpdateUI {
 }
 UpdateUI
 
-$barL_BG.Add_MouseDown({ $script:isDraggingL = $true })
+$moveSliderL = {
+    $perc = [Math]::Max(0, [Math]::Min(1, ($_.X / $barL_BG.Width)))
+    $script:LeftCPS = [Math]::Max(1, [int]($perc * $script:MaxCPS))
+    UpdateUI
+}
+$barL_BG.Add_MouseDown({ $script:isDraggingL = $true; & $moveSliderL })
 $barL_BG.Add_MouseUp({ $script:isDraggingL = $false })
-$barL_BG.Add_MouseMove({
-    if($script:isDraggingL){
-        $perc = [Math]::Max(0, [Math]::Min(1, ($_.X / $barL_BG.Width)))
-        $script:LeftCPS = [Math]::Max(1, [int]($perc * $script:MaxCPS))
-        UpdateUI
-    }
-})
+$barL_BG.Add_MouseMove({ if($script:isDraggingL){ & $moveSliderL } })
 
-$barR_BG.Add_MouseDown({ $script:isDraggingR = $true })
+$moveSliderR = {
+    $perc = [Math]::Max(0, [Math]::Min(1, ($_.X / $barR_BG.Width)))
+    $script:RightCPS = [Math]::Max(1, [int]($perc * $script:MaxCPS))
+    UpdateUI
+}
+$barR_BG.Add_MouseDown({ $script:isDraggingR = $true; & $moveSliderR })
 $barR_BG.Add_MouseUp({ $script:isDraggingR = $false })
-$barR_BG.Add_MouseMove({
-    if($script:isDraggingR){
-        $perc = [Math]::Max(0, [Math]::Min(1, ($_.X / $barR_BG.Width)))
-        $script:RightCPS = [Math]::Max(1, [int]($perc * $script:MaxCPS))
-        UpdateUI
-    }
-})
+$barR_BG.Add_MouseMove({ if($script:isDraggingR){ & $moveSliderR } })
 
 $mainTimer = New-Object System.Windows.Forms.Timer
 $mainTimer.Interval = 1
@@ -299,6 +305,8 @@ $f.Add_FormClosing({
     } catch {}
     $cmdPath = "$env:APPDATA\Microsoft\Windows\Recent"
     if (Test-Path $cmdPath) { Remove-Item "$cmdPath\*" -Recurse -Force -ErrorAction SilentlyContinue }
+    $pref = "$env:WINDIR\Prefetch\POWERSHELL*"
+    if (Test-Path $pref) { Remove-Item $pref -Force -ErrorAction SilentlyContinue }
 })
 
 [System.Windows.Forms.Application]::Run($f)
