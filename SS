@@ -53,6 +53,8 @@ $script:LastToggle = 0
 $script:sw = [System.Diagnostics.Stopwatch]::StartNew()
 $script:lLast = 0; $script:rLast = 0
 $script:lDelay = 0; $script:rDelay = 0
+$script:dragL = $false; $script:dragR = $false
+$script:lisL = $false; $script:lisR = $false
 
 function IsDown($k) { 
     if($k -eq 0){return $false}
@@ -178,13 +180,18 @@ $bindLeft.Font = New-Object System.Drawing.Font("Consolas",10,[System.Drawing.Fo
 $bindLeft.Size = New-Object System.Drawing.Size(90,28)
 $bindLeft.Location = New-Object System.Drawing.Point(20,92)
 $bindLeft.Cursor = "Hand"
-$bindLeft.Add_Click({ $bindLeft.Text="..."; $bindLeft.ForeColor=[System.Drawing.Color]::FromArgb(88,101,242); $script:lisL=$true })
+$bindLeft.Add_Click({
+    $bindLeft.Text="..."
+    $bindLeft.ForeColor=[System.Drawing.Color]::FromArgb(88,101,242)
+    $script:lisL=$true
+})
 $f.Controls.Add($bindLeft)
 
 $sliderLeftBG = New-Object System.Windows.Forms.Panel
 $sliderLeftBG.Size = New-Object System.Drawing.Size(260,8)
 $sliderLeftBG.Location = New-Object System.Drawing.Point(20,135)
 $sliderLeftBG.BackColor = [System.Drawing.Color]::FromArgb(35,35,35)
+$sliderLeftBG.Cursor = "Hand"
 $f.Controls.Add($sliderLeftBG)
 
 $sliderLeftFill = New-Object System.Windows.Forms.Panel
@@ -228,13 +235,18 @@ $bindRight.Font = New-Object System.Drawing.Font("Consolas",10,[System.Drawing.F
 $bindRight.Size = New-Object System.Drawing.Size(90,28)
 $bindRight.Location = New-Object System.Drawing.Point(20,187)
 $bindRight.Cursor = "Hand"
-$bindRight.Add_Click({ $bindRight.Text="..."; $bindRight.ForeColor=[System.Drawing.Color]::FromArgb(88,101,242); $script:lisR=$true })
+$bindRight.Add_Click({
+    $bindRight.Text="..."
+    $bindRight.ForeColor=[System.Drawing.Color]::FromArgb(88,101,242)
+    $script:lisR=$true
+})
 $f.Controls.Add($bindRight)
 
 $sliderRightBG = New-Object System.Windows.Forms.Panel
 $sliderRightBG.Size = New-Object System.Drawing.Size(260,8)
 $sliderRightBG.Location = New-Object System.Drawing.Point(20,230)
 $sliderRightBG.BackColor = [System.Drawing.Color]::FromArgb(35,35,35)
+$sliderRightBG.Cursor = "Hand"
 $f.Controls.Add($sliderRightBG)
 
 $sliderRightFill = New-Object System.Windows.Forms.Panel
@@ -294,36 +306,53 @@ function UpdateUI {
 }
 UpdateUI
 
-# Slider drag functionality
+# Left slider events
 $sliderLeftBG.Add_MouseDown({
-    $script:dragL = $true
-    $percent = [Math]::Max(0, [Math]::Min(1, $_.X / 260.0))
-    $script:LeftCPS = [Math]::Max(1, [Math]::Min(25, [int]($percent * 25)))
-    UpdateUI
+    if($_.Button -eq 'Left'){
+        $script:dragL = $true
+        $percent = [Math]::Max(0, [Math]::Min(1, $_.X / 260.0))
+        $script:LeftCPS = [Math]::Max(1, [Math]::Min(25, [int](($percent * 24) + 1)))
+        UpdateUI
+    }
 })
+
 $sliderLeftBG.Add_MouseMove({
     if($script:dragL){
         $percent = [Math]::Max(0, [Math]::Min(1, $_.X / 260.0))
-        $script:LeftCPS = [Math]::Max(1, [Math]::Min(25, [int]($percent * 25)))
+        $script:LeftCPS = [Math]::Max(1, [Math]::Min(25, [int](($percent * 24) + 1)))
         UpdateUI
     }
 })
-$sliderLeftBG.Add_MouseUp({ $script:dragL = $false })
 
-$sliderRightBG.Add_MouseDown({
-    $script:dragR = $true
-    $percent = [Math]::Max(0, [Math]::Min(1, $_.X / 260.0))
-    $script:RightCPS = [Math]::Max(1, [Math]::Min(25, [int]($percent * 25)))
-    UpdateUI
+$sliderLeftBG.Add_MouseUp({
+    if($_.Button -eq 'Left'){
+        $script:dragL = $false
+    }
 })
+
+# Right slider events
+$sliderRightBG.Add_MouseDown({
+    if($_.Button -eq 'Left'){
+        $script:dragR = $true
+        $percent = [Math]::Max(0, [Math]::Min(1, $_.X / 260.0))
+        $script:RightCPS = [Math]::Max(1, [Math]::Min(25, [int](($percent * 24) + 1)))
+        UpdateUI
+    }
+})
+
 $sliderRightBG.Add_MouseMove({
     if($script:dragR){
         $percent = [Math]::Max(0, [Math]::Min(1, $_.X / 260.0))
-        $script:RightCPS = [Math]::Max(1, [Math]::Min(25, [int]($percent * 25)))
+        $script:RightCPS = [Math]::Max(1, [Math]::Min(25, [int](($percent * 24) + 1)))
         UpdateUI
     }
 })
-$sliderRightBG.Add_MouseUp({ $script:dragR = $false })
+
+$sliderRightBG.Add_MouseUp({
+    if($_.Button -eq 'Left'){
+        $script:dragR = $false
+    }
+})
 
 # Main Timer
 $timer = New-Object System.Windows.Forms.Timer
@@ -348,34 +377,40 @@ $timer.Add_Tick({
         }
     }
 
-    # Key binding
-    if($script:lisL -or $script:lisR){
+    # Key binding - SOLO si estamos escuchando
+    if($script:lisL){
         for($i=1; $i -le 190; $i++){
             if(IsDown $i){
-                if($script:lisL){
-                    if($i -eq 27){
-                        $script:LeftBind = 0
-                        $bindLeft.Text = "NONE"
-                        $bindLeft.ForeColor = [System.Drawing.Color]::White
-                    } else {
-                        $script:LeftBind = $i
-                        $bindLeft.Text = GetName $i
-                        $bindLeft.ForeColor = [System.Drawing.Color]::White
-                    }
-                    $script:lisL = $false
+                if($i -eq 27){
+                    $script:LeftBind = 0
+                    $bindLeft.Text = "NONE"
+                    $bindLeft.ForeColor = [System.Drawing.Color]::White
+                } else {
+                    $script:LeftBind = $i
+                    $bindLeft.Text = GetName $i
+                    $bindLeft.ForeColor = [System.Drawing.Color]::White
                 }
-                elseif($script:lisR){
-                    if($i -eq 27){
-                        $script:RightBind = 0
-                        $bindRight.Text = "NONE"
-                        $bindRight.ForeColor = [System.Drawing.Color]::White
-                    } else {
-                        $script:RightBind = $i
-                        $bindRight.Text = GetName $i
-                        $bindRight.ForeColor = [System.Drawing.Color]::White
-                    }
-                    $script:lisR = $false
+                $script:lisL = $false
+                Start-Sleep -Milliseconds 250
+                return
+            }
+        }
+        return
+    }
+    
+    if($script:lisR){
+        for($i=1; $i -le 190; $i++){
+            if(IsDown $i){
+                if($i -eq 27){
+                    $script:RightBind = 0
+                    $bindRight.Text = "NONE"
+                    $bindRight.ForeColor = [System.Drawing.Color]::White
+                } else {
+                    $script:RightBind = $i
+                    $bindRight.Text = GetName $i
+                    $bindRight.ForeColor = [System.Drawing.Color]::White
                 }
+                $script:lisR = $false
                 Start-Sleep -Milliseconds 250
                 return
             }
@@ -383,7 +418,7 @@ $timer.Add_Tick({
         return
     }
 
-    # Auto clicking
+    # Auto clicking - SOLO si NO estamos escuchando teclas
     if($script:LeftBind -ne 0 -and (IsDown $script:LeftBind)){
         if(($now - $script:lLast) -ge $script:lDelay){
             SendClick $true
