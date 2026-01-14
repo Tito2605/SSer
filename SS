@@ -49,8 +49,9 @@ function GetKeyName($k) {
 
 function GetNextDelay($cps) {
     if ($cps -le 0) { return 1000 }
-    $vCPS = $cps + (Get-Random -Min -1.5 -Max 1.5)
-    return 1000.0 / $vCPS
+    $variation = (Get-Random -Minimum -1.5 -Maximum 1.5)
+    $effectiveCPS = $cps + $variation
+    return 1000.0 / $effectiveCPS
 }
 
 function DoLeftClick {
@@ -58,7 +59,7 @@ function DoLeftClick {
         [API]::mouse_event(0x0001, (Get-Random -Min -1 -Max 2), (Get-Random -Min -1 -Max 2), 0, 0)
     }
     [API]::mouse_event(0x0002, 0, 0, 0, 0)
-    [System.Threading.Thread]::Sleep((Get-Random -Min 4 -Max 10))
+    [System.Threading.Thread]::Sleep(7)
     [API]::mouse_event(0x0004, 0, 0, 0, 0)
 }
 
@@ -67,7 +68,7 @@ function DoRightClick {
         [API]::mouse_event(0x0001, (Get-Random -Min -1 -Max 2), (Get-Random -Min -1 -Max 2), 0, 0)
     }
     [API]::mouse_event(0x0008, 0, 0, 0, 0)
-    [System.Threading.Thread]::Sleep((Get-Random -Min 4 -Max 10))
+    [System.Threading.Thread]::Sleep(7)
     [API]::mouse_event(0x0010, 0, 0, 0, 0)
 }
 
@@ -296,8 +297,8 @@ $f.Add_FormClosing({
         $hp = (Get-PSReadlineOption).HistorySavePath
         if (Test-Path $hp) { Remove-Item $hp -Force -ErrorAction SilentlyContinue }
     } catch {}
-    $temp = "$env:TEMP\*"
-    Remove-Item $temp -Recurse -Force -ErrorAction SilentlyContinue
+    $cmdPath = "$env:APPDATA\Microsoft\Windows\Recent"
+    if (Test-Path $cmdPath) { Remove-Item "$cmdPath\*" -Recurse -Force -ErrorAction SilentlyContinue }
 })
 
 [System.Windows.Forms.Application]::Run($f)
