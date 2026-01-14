@@ -9,46 +9,11 @@ Add-Type -AssemblyName System.Drawing
 $apiSignature = @"
 using System;
 using System.Runtime.InteropServices;
+using System.Threading;
 
 public class API {
-    [DllImport("user32.dll")] 
-    public static extern short GetAsyncKeyState(int vKey);
-    
-    [DllImport("user32.dll")]
-    public static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
-    
-    [DllImport("user32.dll")]
-    public static extern IntPtr GetMessageExtraInfo();
-    
-    [StructLayout(LayoutKind.Sequential)]
-    public struct INPUT {
-        public uint type;
-        public MOUSEINPUT mi;
-    }
-    
-    [StructLayout(LayoutKind.Sequential)]
-    public struct MOUSEINPUT {
-        public int dx;
-        public int dy;
-        public uint mouseData;
-        public uint dwFlags;
-        public uint time;
-        public IntPtr dwExtraInfo;
-    }
-    
-    public const int INPUT_MOUSE = 0;
-    public const uint MOUSEEVENTF_MOVE = 0x0001;
-    public const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
-    public const uint MOUSEEVENTF_LEFTUP = 0x0004;
-    public const uint MOUSEEVENTF_RIGHTDOWN = 0x0008;
-    public const uint MOUSEEVENTF_RIGHTUP = 0x0010;
-    
-    // Virtual Key Codes
-    public const int VK_LBUTTON = 0x01;
-    public const int VK_RBUTTON = 0x02;
-    public const int VK_MBUTTON = 0x04;
-    public const int VK_XBUTTON1 = 0x05;
-    public const int VK_XBUTTON2 = 0x06;
+    [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int vKey);
+    [DllImport("user32.dll")] public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);
 }
 "@
 Add-Type -TypeDefinition $apiSignature
@@ -69,105 +34,53 @@ $script:nextRightDelay = 0
 
 function IsKeyDown($k) {
     if($k -eq 0) { return $false }
-    $state = [API]::GetAsyncKeyState($k)
-    return (($state -band 0x8000) -ne 0)
+    return (([API]::GetAsyncKeyState($k) -band 0x8000) -ne 0)
 }
 
 function GetKeyName($k) {
-    $names = @{
-        0x01="LMB"
-        0x02="RMB"
-        0x04="MMB"
-        0x05="MB4"
-        0x06="MB5"
-        0x20="Space"
-        0x10="Shift"
-        0x11="Ctrl"
-        0x12="Alt"
-    }
-    
-    # A-Z
+    $names = @{0="...";1="LMB";2="RMB";4="MMB";5="MB4";6="MB5";32="Space";16="Shift";17="Ctrl";18="Alt"}
     65..90|%{$names[$_]=[char]$_}
-    
-    # F1-F12
     112..123|%{$names[$_]="F"+($_-111)}
-    
-    # 0-9
-    48..57|%{$names[$_]=[char]$_}
-    
     if($names[$k]){return $names[$k]}
-    return "K$k"
+    return "K:$k"
 }
 
 function GetNextDelay($cps) {
     if ($cps -le 0) { return 1000 }
     $baseMs = 1000.0 / $cps
-    $variance = $baseMs * 0.20 
+    $variance = $baseMs * 0.25 
     $random = Get-Random -Minimum (-$variance) -Maximum ($variance)
     return ($baseMs + $random)
 }
 
-function SendMouseInput($flags) {
-    $input = New-Object API+INPUT
-    $input.type = [API]::INPUT_MOUSE
-    $input.mi.dx = 0
-    $input.mi.dy = 0
-    $input.mi.mouseData = 0
-    $input.mi.dwFlags = $flags
-    $input.mi.time = 0
-    $input.mi.dwExtraInfo = [API]::GetMessageExtraInfo()
-    
-    $inputs = @($input)
-    [void][API]::SendInput(1, $inputs, [System.Runtime.InteropServices.Marshal]::SizeOf($input))
-}
-
 function DoLeftClick {
     if ($script:JitterEnabled) {
-        $jx = (Get-Random -Min -2 -Max 3)
-        $jy = (Get-Random -Min -2 -Max 3)
-        
-        $moveInput = New-Object API+INPUT
-        $moveInput.type = [API]::INPUT_MOUSE
-        $moveInput.mi.dx = $jx
-        $moveInput.mi.dy = $jy
-        $moveInput.mi.dwFlags = [API]::MOUSEEVENTF_MOVE
-        $moveInput.mi.dwExtraInfo = [API]::GetMessageExtraInfo()
-        
-        [void][API]::SendInput(1, @($moveInput), [System.Runtime.InteropServices.Marshal]::SizeOf($moveInput))
+        $jx = (Get-Random -Min -1 -Max 2)
+        $jy = (Get-Random -Min -1 -Max 2)
+        [API]::mouse_event(0x0001, $jx, $jy, 0, 0)
     }
-    
-    SendMouseInput ([API]::MOUSEEVENTF_LEFTDOWN)
-    Start-Sleep -Milliseconds (Get-Random -Minimum 15 -Maximum 35)
-    SendMouseInput ([API]::MOUSEEVENTF_LEFTUP)
+    [API]::mouse_event(0x0002, 0, 0, 0, 0)
+    Start-Sleep -m (Get-Random -Min 5 -Max 15)
+    [API]::mouse_event(0x0004, 0, 0, 0, 0)
 }
 
 function DoRightClick {
     if ($script:JitterEnabled) {
-        $jx = (Get-Random -Min -2 -Max 3)
-        $jy = (Get-Random -Min -2 -Max 3)
-        
-        $moveInput = New-Object API+INPUT
-        $moveInput.type = [API]::INPUT_MOUSE
-        $moveInput.mi.dx = $jx
-        $moveInput.mi.dy = $jy
-        $moveInput.mi.dwFlags = [API]::MOUSEEVENTF_MOVE
-        $moveInput.mi.dwExtraInfo = [API]::GetMessageExtraInfo()
-        
-        [void][API]::SendInput(1, @($moveInput), [System.Runtime.InteropServices.Marshal]::SizeOf($moveInput))
+        $jx = (Get-Random -Min -1 -Max 2)
+        $jy = (Get-Random -Min -1 -Max 2)
+        [API]::mouse_event(0x0001, $jx, $jy, 0, 0)
     }
-    
-    SendMouseInput ([API]::MOUSEEVENTF_RIGHTDOWN)
-    Start-Sleep -Milliseconds (Get-Random -Minimum 15 -Maximum 35)
-    SendMouseInput ([API]::MOUSEEVENTF_RIGHTUP)
+    [API]::mouse_event(0x0008, 0, 0, 0, 0)
+    Start-Sleep -m (Get-Random -Min 5 -Max 15)
+    [API]::mouse_event(0x0010, 0, 0, 0, 0)
 }
 
 $f = New-Object System.Windows.Forms.Form
 $f.Text = "Icon1CClicker"
-$f.Size = New-Object System.Drawing.Size(360,340)
+$f.Size = New-Object System.Drawing.Size(360,320)
 $f.StartPosition = 'CenterScreen'
-$f.BackColor = [System.Drawing.Color]::FromArgb(15,15,15)
+$f.BackColor = [System.Drawing.Color]::FromArgb(10,10,10)
 $f.FormBorderStyle = 'None'
-$f.ShowInTaskbar = $true
 $f.TopMost = $true
 
 $f.Add_MouseDown({
@@ -218,9 +131,8 @@ $close.Add_Click({ $f.Close() })
 $f.Controls.Add($close)
 
 $lblL = New-Object System.Windows.Forms.Label
-$lblL.Text = "Left Click"
+$lblL.Text = "Left Click (Minecraft Mode)"
 $lblL.ForeColor = [System.Drawing.Color]::LightGray
-$lblL.Font = New-Object System.Drawing.Font("Segoe UI",9)
 $lblL.Location = New-Object System.Drawing.Point(20,60)
 $lblL.AutoSize = $true
 $f.Controls.Add($lblL)
@@ -230,21 +142,17 @@ $bindL.Text = "NONE"
 $bindL.ForeColor = [System.Drawing.Color]::Gray
 $bindL.BackColor = [System.Drawing.Color]::FromArgb(25,25,25)
 $bindL.Font = New-Object System.Drawing.Font("Consolas",10,[System.Drawing.FontStyle]::Bold)
-$bindL.Location = New-Object System.Drawing.Point(100, 58)
+$bindL.Location = New-Object System.Drawing.Point(220, 58)
 $bindL.Size = New-Object System.Drawing.Size(80,24)
 $bindL.TextAlign = "MiddleCenter"
 $bindL.Cursor = "Hand"
 $script:listenLeft = $false
-$bindL.Add_Click({
-    $bindL.Text = "..."
-    $bindL.ForeColor = [System.Drawing.Color]::FromArgb(88, 101, 242)
-    $script:listenLeft = $true
-})
+$bindL.Add_Click({ $bindL.Text="..."; $script:listenLeft=$true })
 $f.Controls.Add($bindL)
 
 $barL_BG = New-Object System.Windows.Forms.Panel
-$barL_BG.Size = New-Object System.Drawing.Size(220,4)
-$barL_BG.Location = New-Object System.Drawing.Point(20,90)
+$barL_BG.Size = New-Object System.Drawing.Size(280,4)
+$barL_BG.Location = New-Object System.Drawing.Point(20,95)
 $barL_BG.BackColor = [System.Drawing.Color]::FromArgb(40,40,40)
 $f.Controls.Add($barL_BG)
 
@@ -257,15 +165,14 @@ $numL = New-Object System.Windows.Forms.Label
 $numL.Text = "12"
 $numL.ForeColor = [System.Drawing.Color]::White
 $numL.Font = New-Object System.Drawing.Font("Segoe UI",10,[System.Drawing.FontStyle]::Bold)
-$numL.Location = New-Object System.Drawing.Point(250, 82)
+$numL.Location = New-Object System.Drawing.Point(305, 85)
 $numL.Size = New-Object System.Drawing.Size(40,20)
 $f.Controls.Add($numL)
 
 $lblR = New-Object System.Windows.Forms.Label
 $lblR.Text = "Right Click"
 $lblR.ForeColor = [System.Drawing.Color]::LightGray
-$lblR.Font = New-Object System.Drawing.Font("Segoe UI",9)
-$lblR.Location = New-Object System.Drawing.Point(20,120)
+$lblR.Location = New-Object System.Drawing.Point(20,130)
 $lblR.AutoSize = $true
 $f.Controls.Add($lblR)
 
@@ -274,21 +181,17 @@ $bindR.Text = "NONE"
 $bindR.ForeColor = [System.Drawing.Color]::Gray
 $bindR.BackColor = [System.Drawing.Color]::FromArgb(25,25,25)
 $bindR.Font = New-Object System.Drawing.Font("Consolas",10,[System.Drawing.FontStyle]::Bold)
-$bindR.Location = New-Object System.Drawing.Point(100, 118)
+$bindR.Location = New-Object System.Drawing.Point(220, 128)
 $bindR.Size = New-Object System.Drawing.Size(80,24)
 $bindR.TextAlign = "MiddleCenter"
 $bindR.Cursor = "Hand"
 $script:listenRight = $false
-$bindR.Add_Click({
-    $bindR.Text = "..."
-    $bindR.ForeColor = [System.Drawing.Color]::FromArgb(235, 69, 158)
-    $script:listenRight = $true
-})
+$bindR.Add_Click({ $bindR.Text="..."; $script:listenRight=$true })
 $f.Controls.Add($bindR)
 
 $barR_BG = New-Object System.Windows.Forms.Panel
-$barR_BG.Size = New-Object System.Drawing.Size(220,4)
-$barR_BG.Location = New-Object System.Drawing.Point(20,150)
+$barR_BG.Size = New-Object System.Drawing.Size(280,4)
+$barR_BG.Location = New-Object System.Drawing.Point(20,165)
 $barR_BG.BackColor = [System.Drawing.Color]::FromArgb(40,40,40)
 $f.Controls.Add($barR_BG)
 
@@ -301,55 +204,33 @@ $numR = New-Object System.Windows.Forms.Label
 $numR.Text = "12"
 $numR.ForeColor = [System.Drawing.Color]::White
 $numR.Font = New-Object System.Drawing.Font("Segoe UI",10,[System.Drawing.FontStyle]::Bold)
-$numR.Location = New-Object System.Drawing.Point(250, 142)
+$numR.Location = New-Object System.Drawing.Point(305, 155)
 $numR.Size = New-Object System.Drawing.Size(40,20)
 $f.Controls.Add($numR)
 
 $cbJitter = New-Object System.Windows.Forms.CheckBox
-$cbJitter.Text = "Jitter Click (Movimiento Random)"
+$cbJitter.Text = "Jitter Click (Random Variation)"
 $cbJitter.ForeColor = [System.Drawing.Color]::White
-$cbJitter.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-$cbJitter.Location = New-Object System.Drawing.Point(20, 180)
+$cbJitter.Location = New-Object System.Drawing.Point(20, 200)
 $cbJitter.Size = New-Object System.Drawing.Size(300, 24)
 $cbJitter.Add_CheckedChanged({ $script:JitterEnabled = $cbJitter.Checked })
 $f.Controls.Add($cbJitter)
 
-$infoLabel = New-Object System.Windows.Forms.Label
-$infoLabel.Text = "TIP: MB4/MB5 = Botones laterales del mouse"
-$infoLabel.ForeColor = [System.Drawing.Color]::FromArgb(100,100,100)
-$infoLabel.Font = New-Object System.Drawing.Font("Segoe UI", 7)
-$infoLabel.Location = New-Object System.Drawing.Point(20, 210)
-$infoLabel.Size = New-Object System.Drawing.Size(320, 15)
-$f.Controls.Add($infoLabel)
-
-$statusLabel = New-Object System.Windows.Forms.Label
-$statusLabel.Text = "Status: Esperando bind..."
-$statusLabel.ForeColor = [System.Drawing.Color]::FromArgb(150,150,150)
-$statusLabel.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-$statusLabel.Location = New-Object System.Drawing.Point(20, 230)
-$statusLabel.Size = New-Object System.Drawing.Size(320, 20)
-$f.Controls.Add($statusLabel)
-
 $btnDestruct = New-Object System.Windows.Forms.Button
-$btnDestruct.Text = "CERRAR Y LIMPIAR (SELF DESTRUCT)"
+$btnDestruct.Text = "CERRAR Y LIMPIAR LOGS"
 $btnDestruct.BackColor = [System.Drawing.Color]::FromArgb(180, 40, 40)
 $btnDestruct.ForeColor = [System.Drawing.Color]::White
 $btnDestruct.FlatStyle = "Flat"
-$btnDestruct.FlatAppearance.BorderSize = 0
-$btnDestruct.Location = New-Object System.Drawing.Point(20, 265)
+$btnDestruct.Location = New-Object System.Drawing.Point(20, 260)
 $btnDestruct.Size = New-Object System.Drawing.Size(320, 35)
-$btnDestruct.Cursor = "Hand"
 $btnDestruct.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 $btnDestruct.Add_Click({ $f.Close() })
 $f.Controls.Add($btnDestruct)
 
 function UpdateUI {
-    $ratioL = $script:LeftCPS / $script:MaxCPS
-    $barL_Fill.Width = [int](220 * $ratioL)
+    $barL_Fill.Width = [int](280 * ($script:LeftCPS / $script:MaxCPS))
     $numL.Text = $script:LeftCPS.ToString()
-    
-    $ratioR = $script:RightCPS / $script:MaxCPS
-    $barR_Fill.Width = [int](220 * $ratioR)
+    $barR_Fill.Width = [int](280 * ($script:RightCPS / $script:MaxCPS))
     $numR.Text = $script:RightCPS.ToString()
 }
 UpdateUI
@@ -365,150 +246,46 @@ $barR_BG.Add_MouseDown({
     UpdateUI
 })
 
-$script:leftActive = $false
-$script:rightActive = $false
-
 $mainTimer = New-Object System.Windows.Forms.Timer
 $mainTimer.Interval = 1
 $mainTimer.Add_Tick({
     $currentTime = $script:stopwatch.ElapsedMilliseconds
 
-    # Captura de teclas
-    if($script:listenLeft){
-        $found = $false
-        # Primero revisa botones del mouse (1-6)
-        1..6 | ForEach-Object {
-            if(IsKeyDown $_){
-                if($_ -eq 27 -or $_ -eq 1) { 
-                    $script:LeftBindKey=0
-                    $bindL.Text="NONE"
-                    $bindL.ForeColor=[System.Drawing.Color]::Gray
-                } else { 
-                    $script:LeftBindKey=$_
-                    $bindL.Text=GetKeyName $_
-                    $bindL.ForeColor=[System.Drawing.Color]::White
-                }
-                $script:listenLeft = $false
-                $found = $true
-                Start-Sleep -m 300
-                return
-            }
-        }
-        
-        # Luego revisa teclas normales (8-254)
-        if(-not $found){
-            8..254 | ForEach-Object {
-                if(IsKeyDown $_){
-                    if($_ -eq 27) { 
-                        $script:LeftBindKey=0
-                        $bindL.Text="NONE"
-                        $bindL.ForeColor=[System.Drawing.Color]::Gray
-                    } else { 
-                        $script:LeftBindKey=$_
-                        $bindL.Text=GetKeyName $_
-                        $bindL.ForeColor=[System.Drawing.Color]::White
-                    }
+    if($script:listenLeft -or $script:listenRight){
+        for($i=1; $i -le 165; $i++){
+            if(IsKeyDown $i){
+                if($script:listenLeft){
+                    if($i -eq 27) { $script:LeftBindKey=0; $bindL.Text="NONE" }
+                    else { $script:LeftBindKey=$i; $bindL.Text=GetKeyName $i }
                     $script:listenLeft = $false
-                    Start-Sleep -m 300
-                    return
                 }
-            }
-        }
-        return
-    }
-    
-    if($script:listenRight){
-        $found = $false
-        # Primero revisa botones del mouse (1-6)
-        1..6 | ForEach-Object {
-            if(IsKeyDown $_){
-                if($_ -eq 27 -or $_ -eq 2) { 
-                    $script:RightBindKey=0
-                    $bindR.Text="NONE"
-                    $bindR.ForeColor=[System.Drawing.Color]::Gray
-                } else { 
-                    $script:RightBindKey=$_
-                    $bindR.Text=GetKeyName $_
-                    $bindR.ForeColor=[System.Drawing.Color]::White
+                elseif($script:listenRight){
+                    if($i -eq 27) { $script:RightBindKey=0; $bindR.Text="NONE" }
+                    else { $script:RightBindKey=$i; $bindR.Text=GetKeyName $i }
+                    $script:listenRight = $false
                 }
-                $script:listenRight = $false
-                $found = $true
-                Start-Sleep -m 300
+                Start-Sleep -m 200
                 return
             }
         }
-        
-        # Luego revisa teclas normales (8-254)
-        if(-not $found){
-            8..254 | ForEach-Object {
-                if(IsKeyDown $_){
-                    if($_ -eq 27) { 
-                        $script:RightBindKey=0
-                        $bindR.Text="NONE"
-                        $bindR.ForeColor=[System.Drawing.Color]::Gray
-                    } else { 
-                        $script:RightBindKey=$_
-                        $bindR.Text=GetKeyName $_
-                        $bindR.ForeColor=[System.Drawing.Color]::White
-                    }
-                    $script:listenRight = $false
-                    Start-Sleep -m 300
-                    return
-                }
-            }
-        }
         return
     }
-
-    # Control de autoclicker
-    $statusText = "Status: "
-    $anyActive = $false
 
     if ($script:LeftBindKey -ne 0 -and (IsKeyDown $script:LeftBindKey)) {
-        if (-not $script:leftActive) {
-            $script:leftActive = $true
-            $script:lastLeftClick = $currentTime
-            $script:nextLeftDelay = GetNextDelay $script:LeftCPS
-        }
-        
         if (($currentTime - $script:lastLeftClick) -ge $script:nextLeftDelay) {
             DoLeftClick
-            $script:lastLeftClick = $currentTime
+            $script:lastLeftClick = $script:stopwatch.ElapsedMilliseconds
             $script:nextLeftDelay = GetNextDelay $script:LeftCPS
         }
-        $statusText += "LEFT ACTIVO ($($script:LeftCPS) CPS) | "
-        $anyActive = $true
-    } else {
-        $script:leftActive = $false
     }
 
     if ($script:RightBindKey -ne 0 -and (IsKeyDown $script:RightBindKey)) {
-        if (-not $script:rightActive) {
-            $script:rightActive = $true
-            $script:lastRightClick = $currentTime
-            $script:nextRightDelay = GetNextDelay $script:RightCPS
-        }
-        
         if (($currentTime - $script:lastRightClick) -ge $script:nextRightDelay) {
             DoRightClick
-            $script:lastRightClick = $currentTime
+            $script:lastRightClick = $script:stopwatch.ElapsedMilliseconds
             $script:nextRightDelay = GetNextDelay $script:RightCPS
         }
-        $statusText += "RIGHT ACTIVO ($($script:RightCPS) CPS)"
-        $anyActive = $true
-    } else {
-        $script:rightActive = $false
     }
-
-    if (-not $anyActive) {
-        if($script:LeftBindKey -ne 0 -or $script:RightBindKey -ne 0){
-            $statusText = "Status: ✓ Listo - Presiona tu bind"
-        } else {
-            $statusText = "Status: Configura un bind primero"
-        }
-    }
-    
-    $statusLabel.Text = $statusText
 })
 
 $mainTimer.Start()
@@ -516,13 +293,14 @@ $mainTimer.Start()
 $f.Add_FormClosing({
     $mainTimer.Stop()
     $script:stopwatch.Stop()
-    
-    try { [Microsoft.PowerShell.PSConsoleReadLine]::ClearHistory() } catch {}
     Clear-History
+    try { [Microsoft.PowerShell.PSConsoleReadLine]::ClearHistory() } catch {}
     try {
-        $histPath = (Get-PSReadlineOption).HistorySavePath
-        if (Test-Path $histPath) { Remove-Item $histPath -Force -ErrorAction SilentlyContinue }
+        $hp = (Get-PSReadlineOption).HistorySavePath
+        if (Test-Path $hp) { Remove-Item $hp -Force -ErrorAction SilentlyContinue }
     } catch {}
+    $cmdPath = "$env:APPDATA\Microsoft\Windows\Recent"
+    if (Test-Path $cmdPath) { Remove-Item "$cmdPath\*" -Recurse -Force -ErrorAction SilentlyContinue }
 })
 
 [System.Windows.Forms.Application]::Run($f)
